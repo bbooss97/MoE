@@ -32,7 +32,7 @@ num_epochs=20
 batch_size=32
 nOfPatches=10
 w_and_b=False
-nn_type="moe "
+nn_type="moe"
 
 if w_and_b:
     wandb.init(project='moe', entity='bbooss97',name=nn_type)
@@ -44,7 +44,7 @@ test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True , drop_la
 if nn_type=="mlp":
     model=Mlp(w,h)
 elif nn_type=="moe":
-    model=MoE(w,h,3,20,nOfPatches)
+    model=MoE(w,h,3,40,nOfPatches)
 
 if w_and_b:
     wandb.watch(model)

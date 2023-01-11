@@ -34,6 +34,9 @@ class Mlp(nn.Module):
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 128)
         self.fc4 = nn.Linear(128, 128)
+        self.fc41 = nn.Linear(128, 128)
+        self.fc42 = nn.Linear(128, 128)
+        self.fc43 = nn.Linear(128, 128)
         self.fc5 = nn.Linear(128, 128)
         self.fc6 = nn.Linear(128, 18)
 
@@ -48,6 +51,18 @@ class Mlp(nn.Module):
         x=nn.ReLU()(x)
 
         x=self.fc4(x)
+        x=nn.ReLU()(x)
+
+        
+        x=self.fc41(x)
+        x=nn.ReLU()(x)
+
+        
+        x=self.fc42(x)
+        x=nn.ReLU()(x)
+
+        
+        x=self.fc43(x)
         x=nn.ReLU()(x)
 
         x=self.fc5(x)
@@ -72,9 +87,37 @@ class MoeFc(nn.Module):
     def forward(self, x):
         #compute the logits of the gate
         gateLogits=self.gate(x)
-
+    
         #compute the probability of each expert
-        gateProbabilities=nn.Softmax(dim=1)(gateLogits)
+        gateProbabilities=nn.Softmax(dim=-1)(gateLogits)
+
+        #get the topk
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
+
+        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        #compute the output of each expert
+        for i in range(self.nOfExperts):
+            x_e=(topKindices==i).nonzero()
+            outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]]).T  @ gateProbabilities[x_e[:,0],x_e[:,1],x_e[:,2]]
+
+        return outputs
+
+class MoeFcTokens(nn.Module):
+    def __init__(self,inputDimension, outputDimension,nOfExperts,k):
+        super(MoeFcTokens, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
+        self.gate=nn.Linear(self.inputDimension, self.nOfExperts*self.nOfExperts)
+
+    def forward(self, x):
+        #compute the logits of the gate
+        gateLogits=self.gate(x).reshape(x.shape[0],x.shape[1],self.nOfExperts,self.nOfExperts)
+    
+        #compute the probability of each expert
+        gateProbabilities=nn.Softmax(dim=-1)(gateLogits)
 
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
@@ -86,7 +129,6 @@ class MoeFc(nn.Module):
             outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]]).T @ topKvalues[x_e[:,0],x_e[:,1],x_e[:,2]]
 
         return outputs
-        
 
 class MoE(nn.Module):
     def __init__(self,w,h,k,nOfExperts,nOfPatches):
@@ -95,7 +137,7 @@ class MoE(nn.Module):
         self.h=h
         self.nOfPatches=nOfPatches
         self.k=k
-        self.nOfExperts=20
+        self.nOfExperts=nOfExperts
         self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
         self.moefc=MoeFc(self.tokenSize,128,self.nOfExperts,self.k)
