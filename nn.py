@@ -95,6 +95,7 @@ class MoeFc(nn.Module):
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        
         #compute the output of each expert
         for i in range(self.nOfExperts):
             x_e=(topKindices==i).nonzero()
@@ -110,24 +111,25 @@ class MoeFcTokens(nn.Module):
         self.nOfExperts=nOfExperts
         self.k=k
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
-        self.gate=nn.Linear(self.inputDimension, self.nOfExperts*self.nOfExperts)
+        self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         #compute the logits of the gate
-        gateLogits=self.gate(x).reshape(x.shape[0],x.shape[1],self.nOfExperts,self.nOfExperts)
+        gateLogits=self.gate(x)
     
         #compute the probability of each expert
-        gateProbabilities=nn.Softmax(dim=-1)(gateLogits)
+        gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
 
         #get the topk
-        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         #compute the output of each expert
         for i in range(self.nOfExperts):
-            x_e=(topKindices==i).nonzero()
-            outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]]).T @ topKvalues[x_e[:,0],x_e[:,1],x_e[:,2]]
-
+            
+            batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])
+           
         return outputs
 
 class MoE(nn.Module):
@@ -140,7 +142,7 @@ class MoE(nn.Module):
         self.nOfExperts=nOfExperts
         self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
-        self.moefc=MoeFc(self.tokenSize,128,self.nOfExperts,self.k)
+        self.moefc=MoeFcTokens(self.tokenSize,128,self.nOfExperts,self.k)
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 128)
        
