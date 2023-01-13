@@ -5,6 +5,10 @@ import torchvision
 import wandb
 from dataset import OnePieceDataset
 from nn import *
+from sklearn.metrics import f1_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import accuracy_score
 
 w,h=200,200
 
@@ -14,12 +18,6 @@ dataset=OnePieceDataset(w,h)
 #split in train and test set
 split=[int(0.8*len(dataset)),int(0.2*len(dataset))+1]
 train,test = torch.utils.data.random_split(dataset,split)
-
-from sklearn.metrics import f1_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import accuracy_score
-
 
 #device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
