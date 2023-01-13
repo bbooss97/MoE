@@ -99,8 +99,9 @@ class MoeFc(nn.Module):
         #compute the output of each expert
         for i in range(self.nOfExperts):
             x_e=(topKindices==i).nonzero()
-            outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]]).T  @ gateProbabilities[x_e[:,0],x_e[:,1],x_e[:,2]]
+            outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]])#.T  @ gateProbabilities[x_e[:,0],x_e[:,1],x_e[:,2]]
 
+        outputs=nn.Softmax(dim=-1)(outputs)
         return outputs
 
 class MoeFcTokens(nn.Module):
@@ -128,8 +129,8 @@ class MoeFcTokens(nn.Module):
         for i in range(self.nOfExperts):
             
             batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T @ gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]
-           
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])#.T @ gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]
+
         return outputs
 
 class MoE(nn.Module):
@@ -157,6 +158,7 @@ class MoE(nn.Module):
         x=self.moefc(x)
         x=nn.ReLU()(x)
 
+
         x = self.fc2(x)
         x=nn.ReLU()(x)
 
@@ -164,8 +166,10 @@ class MoE(nn.Module):
         x=nn.ReLU()(x)
 
         x=x.view(x.shape[0],-1)
+
         x=self.fc4(x)
         x=nn.ReLU()(x)
+        
 
         x=self.fc5(x)
         x=nn.ReLU()(x)
