@@ -42,7 +42,7 @@ test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True , drop_la
 if nn_type=="mlp":
     model=Mlp(w,h)
 elif nn_type=="moe":
-    model=MoE(w,h,2,20,nOfPatches)
+    model=MoE(w,h,2,60,nOfPatches)
 
 if w_and_b:
     wandb.watch(model)
