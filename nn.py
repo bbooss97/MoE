@@ -173,7 +173,7 @@ class MoeFcTokens(nn.Module):
         #compute the output of each expert
         for i in range(self.nOfExperts):
             batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T @ gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
             
         return outputs
 
