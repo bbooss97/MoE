@@ -26,11 +26,13 @@ print(device)
 
 #declare parameters
 percentageOfDataset=1
-num_epochs=20
+num_epochs=10000
 batch_size=32
 nOfPatches=10
 w_and_b=False
 nn_type="moe"
+
+balanceTheLoss=False
 
 if w_and_b:
     wandb.init(project='moe', entity='bbooss97',name=nn_type)
@@ -42,7 +44,7 @@ test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True , drop_la
 if nn_type=="mlp":
     model=Mlp(w,h)
 elif nn_type=="moe":
-    model=MoE(w,h,2,60,nOfPatches)
+    model=MoE(w,h,10,20,nOfPatches,useTokenBasedApproach=False,useAttention=False)
 
 if w_and_b:
     wandb.watch(model)
@@ -53,6 +55,7 @@ model=model.to(device)
 loss=nn.CrossEntropyLoss()
 optimizer=torch.optim.Adam(model.parameters())
 
+
 for epoch in range(num_epochs):
 
     #train
@@ -60,6 +63,7 @@ for epoch in range(num_epochs):
     if w_and_b:
         wandb.log({"epoch":epoch})
 
+    #normal loop for training
     #train loop
     for i, (images, labels,paths) in enumerate(train_dataloader):
 
@@ -80,6 +84,7 @@ for epoch in range(num_epochs):
             patches=patches.transpose(1,2)
             patches=patches.to(device)
             outputs=model(patches)
+            balancingLoss=model.moefc.balancingLoss
         elif nn_type=="mlp":
             images=images.view(images.shape[0],-1)
             outputs=model(images)
@@ -88,17 +93,24 @@ for epoch in range(num_epochs):
         
         #calculate the loss
         l=loss(outputs,labels)
+        if nn_type=="moe" and balanceTheLoss:
+            l=l+balancingLoss/(100)
+            print("epoch: {}   ,loss: {}   ,  balancingLoss: {} ".format(epoch+1,l.item()-balancingLoss.item()/100,balancingLoss.item()/100))
+            
+            
         
         #backpropagation
         optimizer.zero_grad()
         l.backward()
         optimizer.step()
+        if not balanceTheLoss:
+            print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)*percentageOfDataset),l.item()))
         
-        #print the loss
-        print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)*percentageOfDataset),l.item()))
         if w_and_b:
             if i%20==0:
                 wandb.log({"loss_train":l.item()})
+
+        
         
     #test
     model.eval()

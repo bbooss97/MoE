@@ -81,6 +81,7 @@ class MoeFc(nn.Module):
         self.outputDimension=outputDimension
         self.nOfExperts=nOfExperts
         self.k=k
+        self.counter=0
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
         self.useAttention=useAttention
         self.hiddenAttentionDimension=3
@@ -91,6 +92,7 @@ class MoeFc(nn.Module):
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
+        self.counter+=1
         if self.useAttention:
             keys=self.keys(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
             queries=self.queries(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
@@ -105,17 +107,23 @@ class MoeFc(nn.Module):
             #compute the probability of each expert
             gateProbabilities=nn.Softmax(dim=-1)(gateLogits)
 
+        self.balancingLoss=gateProbabilities.sum(dim=-2)
+        self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
+
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
+
+        # if self.counter%100==0:
+        #     print(topKvalues)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         
         #compute the output of each expert
         for i in range(self.nOfExperts):
             x_e=(topKindices==i).nonzero()
-            outputs[x_e[:,0],x_e[:,1]]+=self.experts[i](x[x_e[:,0],x_e[:,1]])#.T  @ gateProbabilities[x_e[:,0],x_e[:,1],x_e[:,2]]
+            outputs[x_e[:,0],x_e[:,1]]+=(self.experts[i](x[x_e[:,0],x_e[:,1]]).T  * gateProbabilities[x_e[:,0],x_e[:,1],x_e[:,2]]).T
 
-        outputs=nn.Softmax(dim=-1)(outputs)
+        #outputs=nn.Softmax(dim=-1)(outputs)
         return outputs
 
 class MoeFcTokens(nn.Module):
@@ -125,6 +133,7 @@ class MoeFcTokens(nn.Module):
         self.outputDimension=outputDimension
         self.nOfExperts=nOfExperts
         self.k=k
+        self.counter=0
         self.useAttention=useAttention
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
         self.hiddenAttentionDimension=3
@@ -136,6 +145,7 @@ class MoeFcTokens(nn.Module):
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
+        self.counter+=1
         #compute the logits of the gate
         if self.useAttention:
             keys=self.keys(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
@@ -147,32 +157,42 @@ class MoeFcTokens(nn.Module):
 
         else:
             gateLogits=self.gate(x)
-        
             #compute the probability of each expert
             gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
 
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
+        self.balancingLoss=gateProbabilities.sum(dim=-2)
+        self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
+
+        # if self.counter%100==0:
+        #     print(topKvalues)
+
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         #compute the output of each expert
         for i in range(self.nOfExperts):
             batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])#.T @ gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]
-
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T @ gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]
+            
         return outputs
 
 class MoE(nn.Module):
-    def __init__(self,w,h,k,nOfExperts,nOfPatches):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
         super(MoE, self).__init__()
         self.w=w
         self.h=h
         self.nOfPatches=nOfPatches
         self.k=k
+        self.useAttention=useAttention
         self.nOfExperts=nOfExperts
         self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
-        self.moefc=MoeFcTokens(self.tokenSize,128,self.nOfExperts,self.k,useAttention=True)
+        if useTokenBasedApproach:
+            self.moefc=MoeFcTokens(self.tokenSize,128,self.nOfExperts,self.k,useAttention=self.useAttention)
+        else:
+            self.moefc=MoeFc(self.tokenSize,128,self.nOfExperts,self.k,useAttention=self.useAttention)
+
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 128)
        
@@ -183,10 +203,9 @@ class MoE(nn.Module):
 
 
     def forward(self, x):
-        
+
         x=self.moefc(x)
         x=nn.ReLU()(x)
-
 
         x = self.fc2(x)
         x=nn.ReLU()(x)
