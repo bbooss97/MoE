@@ -27,31 +27,31 @@ class Expert(nn.Module):
 
 #self attention module to otain the attention map from the patches
 class SelfAttention(torch.nn.Module):
-    def __init__(self, inputDimension,qDimension,kDimension):
+    def __init__(self, inputDimension,hiddenDimension,nOfExperts):
         super(SelfAttention, self).__init__()
-        self.qDimension = qDimension
-        self.kDimension = kDimension
+        self.hiddenDimension = hiddenDimension
         #query and key linear layers
-        self.q = torch.nn.Linear(inputDimension, qDimension)
-        self.k = torch.nn.Linear(inputDimension, kDimension)
+        self.q = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
+        self.k = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
         self.inputDimension = inputDimension
+        self.nOfExperts=nOfExperts
 
     def forward(self, input):
-        input=input.double()
+        #input=input.double()
         #get query and keys
         #shape num, number of patches, qDimension or kDimension
-        q=self.q(input)
-        k=self.k(input)
-        #transpose k for self attention
-        kTrasposed=torch.einsum("abc->acb",k)
+        q=self.q(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
+        k=self.k(input).view(input.shape[0],input.shape[1],self.nOfExperts,self.hiddenDimension)
         #batched matrix multiplication
         #shape num , number of patches, number of patches in this case 225
-        attention=torch.einsum('bij,bjk->bik', q,kTrasposed)
+        #attention=torch.einsum('bij,bjk->bik', q,k)
+        attention=torch.einsum("bijk,bilj->bikl", q,k)
         #scaling factor sqrt of dimension of key vector like in normal self attention
         attention=attention/((input.shape[2])**0.5)
         #softmax along the last dimension
         #shape num , number of patches, number of patches in this case 225
-        attention=torch.softmax(attention,dim=2)
+        attention=torch.softmax(attention,dim=-1)
+        attention=attention.sum(dim=-2)
         return attention
         
 class Mlp(nn.Module):
@@ -115,20 +115,14 @@ class MoeFc(nn.Module):
         self.useAttention=useAttention
         self.hiddenAttentionDimension=3
         if self.useAttention:
-            self.keys=nn.Linear(self.inputDimension, self.hiddenAttentionDimension*self.nOfExperts)
-            self.queries=nn.Linear(self.inputDimension, self.hiddenAttentionDimension*self.nOfExperts)
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         self.counter+=1
         if self.useAttention:
-            keys=self.keys(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
-            queries=self.queries(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
-            queries=torch.einsum("abcd->acbd",queries)
-            gateLogits=torch.einsum("abcd,ackd->abkd",keys,queries)
-            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
-            gateProbabilities=gateProbabilities.sum(dim=-3)
+            gateProbabilities=self.selfAttention(x)
         else:
             #compute the logits of the gate
             gateLogits=self.gate(x)
@@ -141,9 +135,6 @@ class MoeFc(nn.Module):
 
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-1)
-
-        # if self.counter%100==0:
-        #     print(topKvalues)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         
@@ -165,11 +156,11 @@ class MoeFcTokens(nn.Module):
         self.counter=0
         self.useAttention=useAttention
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=10
+        self.hiddenAttentionDimension=3
 
         if self.useAttention:
-            self.keys=nn.Linear(self.inputDimension, self.hiddenAttentionDimension*self.nOfExperts)
-            self.queries=nn.Linear(self.inputDimension, self.hiddenAttentionDimension*self.nOfExperts)
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
@@ -177,13 +168,7 @@ class MoeFcTokens(nn.Module):
         self.counter+=1
         #compute the logits of the gate
         if self.useAttention:
-            keys=self.keys(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
-            queries=self.queries(x).view(x.shape[0],x.shape[1],self.hiddenAttentionDimension,self.nOfExperts)
-            queries=torch.einsum("abcd->acbd",queries)
-            gateLogits=torch.einsum("abcd,ackd->abkd",keys,queries)
-            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
-            gateProbabilities=gateProbabilities.sum(dim=-3)
-
+            gateProbabilities=self.selfAttention(x)
         else:
             gateLogits=self.gate(x)
             #compute the probability of each expert
@@ -194,9 +179,6 @@ class MoeFcTokens(nn.Module):
 
         self.balancingLoss=gateProbabilities.sum(dim=-2)
         self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
-
-        # if self.counter%100==0:
-        #     print(topKvalues)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         #compute the output of each expert
