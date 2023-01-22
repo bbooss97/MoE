@@ -26,10 +26,10 @@ print(device)
 
 #declare parameters
 percentageOfDataset=1
-num_epochs=10000
+num_epochs=20
 batch_size=32
 nOfPatches=10
-w_and_b=False
+w_and_b=True
 nn_type="moe"
 
 balanceTheLoss=False
@@ -44,7 +44,7 @@ test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True , drop_la
 if nn_type=="mlp":
     model=Mlp(w,h)
 elif nn_type=="moe":
-    model=MoE(w,h,10,20,nOfPatches,useTokenBasedApproach=True,useAttention=False)
+    model=MoE(w,h,5,20,nOfPatches,useTokenBasedApproach=True,useAttention=True)
 
 if w_and_b:
     wandb.watch(model)
