@@ -25,7 +25,7 @@ class Expert(nn.Module):
 
         return x
 
-#self attention module to otain the attention map from the patches
+#self attention module to otain the attention map from the patches my idea
 class SelfAttention(torch.nn.Module):
     def __init__(self, inputDimension,hiddenDimension,nOfExperts):
         super(SelfAttention, self).__init__()
@@ -37,22 +37,54 @@ class SelfAttention(torch.nn.Module):
         self.nOfExperts=nOfExperts
 
     def forward(self, input):
-        #input=input.double()
         #get query and keys
-        #shape num, number of patches, qDimension or kDimension
         q=self.q(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
-        k=self.k(input).view(input.shape[0],input.shape[1],self.nOfExperts,self.hiddenDimension)
+        k=self.k(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
+
+        k=torch.permute(k,(0,2,1,3))
+
         #batched matrix multiplication
-        #shape num , number of patches, number of patches in this case 225
-        #attention=torch.einsum('bij,bjk->bik', q,k)
-        attention=torch.einsum("bijk,bilj->bikl", q,k)
+        attention=torch.einsum("bijl,bjkl->bikl", q,k)
         #scaling factor sqrt of dimension of key vector like in normal self attention
-        attention=attention/((input.shape[2])**0.5)
+        attention=attention/(self.hiddenDimension**0.5)
         #softmax along the last dimension
-        #shape num , number of patches, number of patches in this case 225
-        attention=torch.softmax(attention,dim=-1)
-        attention=attention.sum(dim=-2)
+        attention=torch.softmax(attention,dim=-2)
+        attention=attention.sum(dim=-3)
+
         return attention
+
+class Attention(torch.nn.Module):
+    def __init__(self, inputDimension,hiddenDimension,nOfExperts):
+        super(Attention, self).__init__()
+        self.hiddenDimension = hiddenDimension
+        #query and key linear layers
+        self.q = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
+        self.k = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
+        self.v= torch.nn.Linear(inputDimension, nOfExperts)
+        self.toFinal= torch.nn.Linear(hiddenDimension, 1)
+        self.inputDimension = inputDimension
+        self.nOfExperts=nOfExperts
+
+    def forward(self, input):
+        #get query and keys
+        q=self.q(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
+        k=self.k(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
+        v=self.v(input).view(input.shape[0],input.shape[1],self.nOfExperts)
+
+        k=torch.permute(k,(0,2,1,3))
+
+        #batched matrix multiplication
+        attention=torch.einsum("bijl,bjkl->bikl", q,k)
+        #scaling factor sqrt of dimension of key vector like in normal self attention
+        attention=attention/(self.hiddenDimension**0.5)
+        #softmax along the last dimension
+        attention=torch.softmax(attention,dim=-2)
+        #multiply attention with values
+        attention=torch.einsum("bikl,bkl->bil", attention,v)
+
+
+        return attention
+    
         
 class Mlp(nn.Module):
     def __init__(self,w,h):
@@ -160,7 +192,7 @@ class MoeFcTokens(nn.Module):
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
-
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
