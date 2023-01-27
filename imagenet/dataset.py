@@ -11,20 +11,20 @@ np.random.seed(0)
 
 #dataset class
 class ImagenDataset(Dataset):
-    items=[]
-    def __init__(self,w,h,isVal=False):
+    def __init__(self,w,h,isVal):
         self.w=w
         self.h=h
         self.isVal=str(isVal)
+        self.counter=0
+        self.items=[]
         with open("./imagenet/imagenette2-320/noisy_imagenette.csv", "r") as f:
             header=f.readline().split(",")
             for line in f.readlines():
                 line=line.strip().split(",")
                 if line[-1]==self.isVal:
+                    self.counter+=1
                     self.items.append([line[0],int(classes[line[1]])])
         
-
-
     def __len__(self):
         return len(self.items)
 
