@@ -135,7 +135,7 @@ class MoeFcTokensParallel(nn.Module):
 
         prob=gateProbabilities[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],i[:,2]]
 
-        out=out/prob.view(-1,1)
+        out=out*prob.view(-1,1)
 
         outputs[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],:]+=out
         
