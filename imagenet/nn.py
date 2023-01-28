@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 
+
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device= torch.device("cpu")
 
 class Expert(nn.Module):
     def __init__(self,input,output):
@@ -85,6 +88,58 @@ class Attention(torch.nn.Module):
 
         return attention
 
+class MoeFcTokensParallel(nn.Module):
+    def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
+        super(MoeFcTokensParallel, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
+        self.hiddenAttentionDimension=3
+        #self.w = torch.ones(self.nOfExperts,self.inputDimension,self.outputDimension)
+        
+        self.w = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
+        self.b = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
+
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateProbabilities=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+            #compute the probability of each expert
+            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+
+        #get the topk
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+
+        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+
+        i=torch.ones_like(topKindices).nonzero()
+        inp=x[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]]]
+        exp=self.w[i[:,2],:,:]
+        b=self.b[i[:,2],:]
+        out=torch.einsum("ab,abc->ac", inp,exp)
+        out=out+b
+
+        prob=gateProbabilities[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],i[:,2]]
+
+        out=out/prob.view(-1,1)
+
+        outputs[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],:]+=out
+        
+        return outputs
 class MlpPatches(nn.Module):
     def __init__(self,w,h,nOfPatches):
         super(MlpPatches, self).__init__()
@@ -276,7 +331,7 @@ class MoE(nn.Module):
         self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
         if useTokenBasedApproach:
-            self.moefc=MoeFcTokens(self.tokenSize,128,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokensParallel(self.tokenSize,128,self.nOfExperts,self.k,useAttention=self.useAttention)
         else:
             self.moefc=MoeFc(self.tokenSize,128,self.nOfExperts,self.k,useAttention=self.useAttention)
 
@@ -313,4 +368,53 @@ class MoE(nn.Module):
 
         return x
 
+class moeTransformerFc(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.mha=torch.nn.MultiheadAttention(768, 8,batch_first=True)
+        self.norm1=nn.LayerNorm(768)
+        self.norm2=nn.LayerNorm(768)
+        self.fc=MoeFcTokens(768,768,60,3,useAttention=False)
+        self.lastLayer=nn.Linear(768*100,10)
+    
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x_1=x
+        x=self.mha(x,x,x)[0]
+        x=self.norm1(x+x_1)
 
+        x_2=x
+        x=self.fc(x)
+        x=self.norm2(x+x_2)
+        
+        x=self.lastLayer(x.view(x.shape[0],-1))
+
+        return x
+
+class vit(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model=vit_b_16()
+    
+    def forward(self, x):
+        return self.model(x)
+
+class moeStack(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.moe1=MoeFcTokens(768,768,20,3,useAttention=False)
+        self.moe2=MoeFcTokens(768,768,20,3,useAttention=False)
+        self.moe3=MoeFcTokens(768,768,20,3,useAttention=False)
+        self.lastLayer=nn.Linear(768*100,128)
+        self.lastLayer2=nn.Linear(128,10)
+
+    
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.moe1(x)
+        x=self.moe2(x)
+       # x=self.moe3(x)
+        x=self.lastLayer(x.view(x.shape[0],-1))
+        x=self.lastLayer2(x)
+
+        return x
