@@ -9,6 +9,7 @@ from sklearn.metrics import f1_score
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import accuracy_score
+from mlpMixer import MLPMixer
 
 w,h=160,160
 
@@ -22,10 +23,10 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 #declare parameters
-num_epochs=200
-batch_size=32
+num_epochs=20000
+batch_size=64
 nOfPatches=10
-w_and_b=False
+w_and_b=True
 nn_type="moe"
 
 balanceTheLoss=False
@@ -40,7 +41,7 @@ test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=True , 
 if nn_type=="mlp":
     model=Mlp(w,h)
 elif nn_type=="moe":
-    model=MoE(w,h,3,30,nOfPatches,useTokenBasedApproach=True,useAttention=False)
+    model=MoE(w,h,1,20,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="mlp_patches":
     model=MlpPatches(w,h,nOfPatches)
 elif nn_type=="resnetFrom0":
@@ -66,6 +67,9 @@ elif nn_type=="moeTransformerFc":
     model=moeTransformerFc()
 elif nn_type=="moeStack":
     model=moeStack()
+elif nn_type=="mixerMoe":
+    model = MLPMixer(in_channels=3, image_size=w, patch_size=16, num_classes=10,
+                     dim=128, depth=4, token_dim=64, channel_dim=512)
 
     
 
@@ -121,6 +125,10 @@ for epoch in range(num_epochs):
             images=images/255
             images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
+        elif nn_type =="mixerMoe":
+            images=images/255
+            images=torch.einsum("abcd->adbc",images)
+            outputs=model(images)
  
        
     
@@ -137,7 +145,7 @@ for epoch in range(num_epochs):
         #backpropagation
         optimizer.zero_grad()
         l.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
         optimizer.step()
         if not balanceTheLoss:
             print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)),l.item()))
@@ -172,8 +180,9 @@ for epoch in range(num_epochs):
             images = images.to(device)
             labels = labels.to(device)
 
-            if nn_type=="moe":
+            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack":
                 #get the patches
+                images=images/255
                 images=torch.einsum("abcd->adbc",images)
                 size=int(images.shape[2]/nOfPatches)
                 unfold=torch.nn.Unfold(kernel_size=(size,size),stride=size)
@@ -181,8 +190,26 @@ for epoch in range(num_epochs):
                 patches=patches.transpose(1,2)
                 patches=patches.to(device)
                 outputs=model(patches)
+                #balancingLoss=model.moefc.balancingLoss
             elif nn_type=="mlp":
+                images=images/255
                 images=images.view(images.shape[0],-1)
+                outputs=model(images)
+            elif nn_type =="resnetFrom0":
+                images=images/255
+                images=torch.einsum("abcd->adbc",images)
+                outputs=model(images)
+            elif nn_type =="resnetPretrainedFineTuneFc":
+                images=images/255
+                images=torch.einsum("abcd->adbc",images)
+                outputs=model(images)
+            elif nn_type =="vit":
+                images=images/255
+                images=torch.einsum("abcd->adbc",images)
+                outputs=model(images)
+            elif nn_type =="mixerMoe":
+                images=images/255
+                images=torch.einsum("abcd->adbc",images)
                 outputs=model(images)
 
 

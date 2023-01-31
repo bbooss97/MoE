@@ -12,19 +12,19 @@ class Expert(nn.Module):
         self.output=output
         super(Expert, self).__init__()
         self.fc1 = nn.Linear(input,output)
-        self.fc2 = nn.Linear(output, output)
-        self.fc3 = nn.Linear(output, output)
+        self.fc2 = nn.Linear(output,output)
+        # self.fc3 = nn.Linear(output,output)
+
 
 
     def forward(self, x):
         x = self.fc1(x)
-        x=nn.ReLU()(x)
+        x=torch.relu(x)
 
         x = self.fc2(x)
-        x=nn.ReLU()(x)
+        # x=torch.relu(x)
 
-        x=self.fc3(x)
-        x=nn.ReLU()(x)
+        # x = self.fc3(x)
 
         return x
 
@@ -101,9 +101,16 @@ class MoeFcTokensParallel(nn.Module):
         self.hiddenAttentionDimension=3
         #self.w = torch.ones(self.nOfExperts,self.inputDimension,self.outputDimension)
         
-        self.w = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
-        self.b = torch.nn.Parameter(torch.nn.init.xavier_normal_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
+        self.bias1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
 
+        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
+        # self.bias2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
+
+        # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
+        # self.bias3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
+
+        self.first=True
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -126,20 +133,38 @@ class MoeFcTokensParallel(nn.Module):
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
 
-        i=torch.ones_like(topKindices).nonzero()
-        inp=x[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]]]
-        exp=self.w[i[:,2],:,:]
-        b=self.b[i[:,2],:]
+        if self.first:
+            self.first=False
+            i=torch.ones_like(topKindices).nonzero()
+            self.a=i[:,0]
+            self.b=i[:,1]
+            self.c=i[:,2]
+        inp=x[self.a,topKindices[self.a,self.b,self.c]]
+
+        exp=self.weight1[self.c,:,:]
+        b=self.bias1[self.c,:]
         out=torch.einsum("ab,abc->ac", inp,exp)
         out=out+b
+        out=torch.relu(out)
 
-        prob=gateProbabilities[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],i[:,2]]
+        exp=self.weight2[self.c,:,:]
+        b=self.bias2[self.c,:]
+        out=torch.einsum("ab,abc->ac", out,exp)
+        out=out+b
+        out=torch.relu(out)
 
+        exp=self.weight3[self.c,:,:]
+        b=self.bias3[self.c,:]
+        out=torch.einsum("ab,abc->ac", out,exp)
+        out=out+b
+
+        prob=gateProbabilities[self.a,topKindices[self.a,self.b,self.c],self.c]
         out=out*prob.view(-1,1)
 
-        outputs[i[:,0],topKindices[i[:,0],i[:,1],i[:,2]],:]+=out
-        
+        outputs[self.a,topKindices[self.a,self.b,self.c],:]+=out
+
         return outputs
+
 class MlpPatches(nn.Module):
     def __init__(self,w,h,nOfPatches):
         super(MlpPatches, self).__init__()
@@ -315,8 +340,8 @@ class MoeFcTokens(nn.Module):
         #compute the output of each expert
         for i in range(self.nOfExperts):
             batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
-            
+            # outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])
         return outputs
 
 class MoE(nn.Module):
@@ -418,3 +443,4 @@ class moeStack(nn.Module):
         x=self.lastLayer2(x)
 
         return x
+
