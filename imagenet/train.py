@@ -27,7 +27,7 @@ num_epochs=20000
 batch_size=64
 nOfPatches=10
 w_and_b=True
-nn_type="moe"
+nn_type="moeConvolution"
 
 balanceTheLoss=False
 
@@ -70,7 +70,8 @@ elif nn_type=="moeStack":
 elif nn_type=="mixerMoe":
     model = MLPMixer(in_channels=3, image_size=w, patch_size=16, num_classes=10,
                      dim=128, depth=4, token_dim=64, channel_dim=512)
-
+elif nn_type=="moeConvolution":
+    model=MoeConvolution(w,h,3,64,nOfPatches,useTokenBasedApproach=True,useAttention=True)
     
 
 if w_and_b:
@@ -80,7 +81,7 @@ model=model.to(device)
 
 #define loss and the optimizer
 loss=nn.CrossEntropyLoss()
-optimizer=torch.optim.Adam(model.parameters())
+optimizer=torch.optim.Adam(model.parameters(),lr=0.0001)
 
 
 for epoch in range(num_epochs):
@@ -98,7 +99,7 @@ for epoch in range(num_epochs):
         images=images.to(device)
         labels=labels.to(device)
 
-        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack":
+        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution":
             #get the patches
             images=images/255
             images=torch.einsum("abcd->adbc",images)
@@ -180,7 +181,7 @@ for epoch in range(num_epochs):
             images = images.to(device)
             labels = labels.to(device)
 
-            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack":
+            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution":
                 #get the patches
                 images=images/255
                 images=torch.einsum("abcd->adbc",images)
