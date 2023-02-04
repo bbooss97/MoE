@@ -27,7 +27,7 @@ num_epochs=20000
 batch_size=64
 nOfPatches=10
 w_and_b=True
-nn_type="moeCombination"
+nn_type="moeMix"
 
 balanceTheLoss=False
 
@@ -74,8 +74,9 @@ elif nn_type=="moeConvolution":
     model=MoeConvolution(w,h,5,128,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="moeCombination":
     model=MoeCombination(w,h,5,64,5,nOfPatches,useTokenBasedApproach=True,useAttention=False)
+elif nn_type=="moeMix":
+    model=MoeMix(w,h,4,128,nOfPatches,useTokenBasedApproach=True,useAttention=False)
     
-
 if w_and_b:
     wandb.watch(model)
 
@@ -101,7 +102,7 @@ for epoch in range(num_epochs):
         images=images.to(device)
         labels=labels.to(device)
 
-        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution" or nn_type=="moeCombination":
+        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution" or nn_type=="moeCombination" or nn_type=="moeMix":
             #get the patches
             images=images/255
             images=torch.einsum("abcd->adbc",images)
@@ -183,7 +184,7 @@ for epoch in range(num_epochs):
             images = images.to(device)
             labels = labels.to(device)
 
-            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution"or nn_type=="moeCombination":
+            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution"or nn_type=="moeCombination" or nn_type=="moeMix":
                 #get the patches
                 images=images/255
                 images=torch.einsum("abcd->adbc",images)

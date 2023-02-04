@@ -638,7 +638,7 @@ class MoeCombination(nn.Module):
         if useTokenBasedApproach:
             # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
             self.moefc=MoeFcTokensConvolution(32,32,self.nOfExpertsMoe,self.k,useAttention=self.useAttention)
-            self.experts=[ExpertConvolution(3200,32).to(device) for i in range(self.nOfExpertsGlobal)]
+            self.experts=nn.ModuleList([ExpertConvolution(3200,32).to(device) for i in range(self.nOfExpertsGlobal)])
         else:
             self.moefc=MoeFc(self.tokenSize,32,self.nOfExpertsMoe,self.k,useAttention=self.useAttention)
 
@@ -682,6 +682,60 @@ class MoeCombination(nn.Module):
         x=self.fc6(x)
 
         return x
+
+class MoeMix(nn.Module):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
+        super(MoeMix, self).__init__()
+        self.w=w
+        self.h=h
+        self.nOfPatches=nOfPatches
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
+
+        if useTokenBasedApproach:
+            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moes=[MoeFcTokensConvolution(32,32,int(self.nOfExperts/self.k),i,useAttention=self.useAttention).to(device) for i in range(1,self.k+1)]
+        else:
+            self.moefc=MoeFc(self.tokenSize,32,self.nOfExpertsMoe,self.k,useAttention=self.useAttention)
+
+        self.fc1= nn.Linear(self.tokenSize, 32)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 128)
+       
+        self.fc4= nn.Linear(128*32,128)
+
+        self.fc5 = nn.Linear(128, 128)
+        self.fc6 = nn.Linear(128, 10)
+
+
+
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.fc1(x)
+
+        xi=[moe(x) for moe in self.moes]
+        x=torch.cat(xi,dim=1)
+        
+        x=x.view(x.shape[0],-1)
+        x = self.fc4(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc3(x)
+        x=nn.ReLU()(x)
+
+        
+        x=self.fc2(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc5(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc6(x)
+
+        return x
+
 
 
 
