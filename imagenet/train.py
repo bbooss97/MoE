@@ -26,8 +26,8 @@ print(device)
 num_epochs=20000
 batch_size=64
 nOfPatches=10
-w_and_b=True
-nn_type="mixerMoe"
+w_and_b=False
+nn_type="moeConvolution"
 
 balanceTheLoss=False
 
