@@ -33,20 +33,20 @@ class ExpertConvolution(nn.Module):
         self.output=output
         super(ExpertConvolution, self).__init__()
         self.fc1 = nn.Linear(input,output)
-        self.fc2 = nn.Linear(output,output)
-        self.fc3 = nn.Linear(output,output)
+        # self.fc2 = nn.Linear(output,output)
+        # self.fc3 = nn.Linear(output,output)
 
 
     def forward(self, x):
 
 
         x = self.fc1(x)
-        x=torch.relu(x)
+        # x=torch.relu(x)
 
-        x = self.fc2(x)
-        x=torch.relu(x)
+        # x = self.fc2(x)
+        # x=torch.relu(x)
 
-        x = self.fc3(x)
+        # x = self.fc3(x)
 
         return x
 
@@ -375,16 +375,16 @@ class MoeFcTokensConvolution(nn.Module):
         self.k=k
         self.counter=0
         self.useAttention=useAttention
-        self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k,self.outputDimension) for i in range(self.nOfExperts)])
+        self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k,self.outputDimension).to(device) for i in range(self.nOfExperts)])
         self.hiddenAttentionDimension=3
 
         if self.useAttention:
-            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts).to(device)
             # self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
             # self.selfAttention=nn.MultiheadAttention(self.inputDimension,self.nOfExperts,batch_first=True)
             # self.finalLinear=nn.Linear(self.inputDimension,self.nOfExperts)
         else:
-            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts).to(device)
 
     def forward(self, x):
         self.counter+=1
@@ -736,6 +736,121 @@ class MoeMix(nn.Module):
 
         return x
 
+class MoeFcTokensConvolutionProbabilities(nn.Module):
+    def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
+        super(MoeFcTokensConvolutionProbabilities, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k+k,self.outputDimension-self.k).to(device) for i in range(self.nOfExperts)])
+        self.hiddenAttentionDimension=3
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts).to(device)
+            # self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+            # self.selfAttention=nn.MultiheadAttention(self.inputDimension,self.nOfExperts,batch_first=True)
+            # self.finalLinear=nn.Linear(self.inputDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts).to(device)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateProbabilities=self.selfAttention(x)
+            # gateProbabilities=self.selfAttention(x,x,x)[0]
+            # gateProbabilities=self.finalLinear(gateProbabilities)
+        else:
+            gateLogits=self.gate(x)
+            #compute the probability of each expert
+            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+
+        #get the topk
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+
+        self.balancingLoss=gateProbabilities.sum(dim=-2)
+        self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
+
+        outputs=torch.zeros(x.shape[0],self.nOfExperts,self.outputDimension).to(device)
+        topKindices.to(device)
+        for i in range(self.nOfExperts):
+            batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
+            inp=x[batch_indices,topKindices[:,:,i].reshape(-1)]#.reshape(x.shape[0],-1)
+            probabilities=gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i].reshape(x.shape[0],-1)
+            inp=inp*probabilities.reshape(-1,1)
+            inp=inp.reshape(x.shape[0],-1)
+            inp=torch.cat([inp,probabilities],dim=-1)
+            out=self.experts[i](inp)
+            # outputs[:,i,:]=(out.T * probabilities).T
+            p=probabilities.sum(dim=-1).reshape(-1,1)
+            p=p.reshape(-1,1)
+            out=(out*p).reshape(x.shape[0],-1,self.outputDimension-self.k).sum(1)
+
+            out=torch.cat([out,probabilities],dim=-1)
+            outputs[:,i,:]=out
+            # outputs[:,i,:]=out
+
+
+        return outputs
+
+class MoeProbabilities(nn.Module):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
+        super(MoeProbabilities, self).__init__()
+        self.w=w
+        self.h=h
+        self.nOfPatches=nOfPatches
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
+
+        if useTokenBasedApproach:
+            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokensConvolutionProbabilities(32,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+        else:
+            self.moefc=MoeFc(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+
+        self.fc1= nn.Linear(self.tokenSize, 32)
+        self.fc2 = nn.Linear(32, 128)
+        self.fc3 = nn.Linear(128, 128)
+       
+        self.fc4= nn.Linear(128*self.nOfExperts,128)
+
+        self.fc5 = nn.Linear(128, 128)
+        self.fc6 = nn.Linear(128, 10)
+
+
+
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.fc1(x)
+
+        x=self.moefc(x)
+        x=nn.ReLU()(x)
+        #droupout
+        #x=nn.Dropout(0.5)(x)
+
+
+        x = self.fc2(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc3(x)
+        x=nn.ReLU()(x)
+
+        x=x.view(x.shape[0],-1)
+        x=self.fc4(x)
+        x=nn.ReLU()(x)
+
+
+        x=self.fc5(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc6(x)
+
+        return x
 
 
 

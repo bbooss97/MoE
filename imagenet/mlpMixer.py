@@ -3,23 +3,51 @@ import numpy as np
 from torch import nn
 from einops.layers.torch import Rearrange
 from nn import MoeFcTokens
+from nn import MoeFcTokensConvolution
 
 
 class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.):
         super().__init__()
-        self.net = nn.Sequential(
-            MoeFcTokens(dim, hidden_dim,20,1,False),
-            # nn.Linear(dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            MoeFcTokens(hidden_dim,dim,20,1,False),
-            # nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
-        )
-    def forward(self, x):
-        return self.net(x)
+        self.drop=dropout
+        self.dim=dim
+        self.hidden_dim=hidden_dim
+        self.firstSet=False
 
+        # self.fc1=nn.Linear(dim,hidden_dim)
+        # self.fc2=nn.Linear(hidden_dim,dim)
+
+        
+
+        # self.fc1=MoeFcTokens(dim,hidden_dim,20,1,useAttention=False)
+        # self.fc2=MoeFcTokens(hidden_dim,dim,20,1,useAttention=False)
+
+        # self.net = nn.Sequential(
+        #     # MoeFcTokensself must be a matrixConvolution(dim,hidden_dim,32,1,useAttention=True),
+        #     # MoeFcTokens(dim,hidden_dim,20,1,useAttention=True),
+        #     nn.Linear(dim, hidden_dim),
+        #     nn.GELU(),
+        #     nn.Dropout(dropout),
+        #     # MoeFcTokensConvolution(hidden_dim,dim,32,1,useAttention=True),
+        #     # MoeFcTokens(hidden_dim,dim,20,1,useAttention=True),
+        #     nn.Linear(hidden_dim, dim),
+        #     nn.Dropout(dropout)
+        # )
+
+    def forward(self, x):
+        if not self.firstSet:
+            self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
+            self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
+            # self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
+            # self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
+
+        x=self.fc1(x)
+        x=nn.GELU()(x)
+        x=nn.Dropout(self.drop)(x)
+        x=self.fc2(x)
+        x=nn.Dropout(self.drop)(x)
+        return x
+        # return self.net(x)
 class MixerBlock(nn.Module):
 
     def __init__(self, dim, num_patch, token_dim, channel_dim, dropout = 0.):
