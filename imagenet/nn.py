@@ -853,4 +853,119 @@ class MoeProbabilities(nn.Module):
         return x
 
 
+class MoeFcTokensRl(nn.Module):
+    def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
+        super(MoeFcTokensRl, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.experts=nn.ModuleList([ExpertConvolution(32*k,self.outputDimension).to(device) for i in range(self.nOfExperts)])
+        self.hiddenAttentionDimension=3
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(32,self.hiddenAttentionDimension,self.nOfExperts).to(device)
+        else:
+            self.gate=nn.Linear(32, self.nOfExperts).to(device)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateProbabilities=self.selfAttention(x)
+            # gateProbabilities=self.selfAttention(x,x,x)[0]
+            # gateProbabilities=self.finalLinear(gateProbabilities)
+        else:
+            gateLogits=self.gate(x)
+            #compute the probability of each expert
+            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+
+    
+        # topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+        g=torch.transpose(gateProbabilities,1,2)
+        topKindices=torch.multinomial(g.reshape(-1,x.shape[1]),self.k,replacement=False).reshape(x.shape[0],self.nOfExperts,self.k)
+        topKindices=torch.transpose(topKindices,1,2)
+
+        ind=torch.ones(x.shape[0],self.k,self.nOfExperts).to(device).nonzero()
+        self.rlLoss=-torch.log(gateProbabilities[ind[:,0],topKindices.reshape(-1),ind[:,2]]).sum()
+
+        outputs=torch.zeros(x.shape[0],self.nOfExperts,self.outputDimension).to(device)
+        topKindices.to(device)
+        for i in range(self.nOfExperts):
+            batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
+            inp=x[batch_indices,topKindices[:,:,i].reshape(-1)]#.reshape(x.shape[0],-1)
+            # probabilities=gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i].reshape(x.shape[0],-1)
+            # inp=inp*probabilities.reshape(-1,1)
+            inp=inp.reshape(x.shape[0],-1)
+            out=self.experts[i](inp)
+            # outputs[:,i,:]=(out.T * probabilities).T
+            # probabilities=probabilities.sum(dim=-1).reshape(-1,1)
+            # probabilities=probabilities.reshape(-1,1)
+            # out=(out*probabilities).reshape(x.shape[0],-1,self.outputDimension).sum(1)
+
+            outputs[:,i,:]=out
+            # outputs[:,i,:]=out
+
+
+        return outputs
+class MoeRl(nn.Module):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
+        super(MoeRl, self).__init__()
+        self.w=w
+        self.h=h
+        self.nOfPatches=nOfPatches
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
+
+        if useTokenBasedApproach:
+            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokensConvolutionProbabilities(32,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+        else:
+            self.moefc=MoeFcTokensRl(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+
+        self.fc1= nn.Linear(self.tokenSize, 32)
+        self.fc2 = nn.Linear(32, 128)
+        self.fc3 = nn.Linear(128, 128)
+       
+        self.fc4= nn.Linear(128*self.nOfExperts,128)
+
+        self.fc5 = nn.Linear(128, 128)
+        self.fc6 = nn.Linear(128, 10)
+
+
+
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.fc1(x)
+
+        x=self.moefc(x)
+        x=nn.ReLU()(x)
+        #droupout
+        #x=nn.Dropout(0.5)(x)
+
+
+        x = self.fc2(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc3(x)
+        x=nn.ReLU()(x)
+
+        x=x.view(x.shape[0],-1)
+        x=self.fc4(x)
+        x=nn.ReLU()(x)
+
+
+        x=self.fc5(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc6(x)
+
+        return x
+
+
+
 
