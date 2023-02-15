@@ -22,32 +22,32 @@ class FeedForward(nn.Module):
         # self.fc1=MoeFcTokens(dim,hidden_dim,20,1,useAttention=False)
         # self.fc2=MoeFcTokens(hidden_dim,dim,20,1,useAttention=False)
 
-        # self.net = nn.Sequential(
-        #     # MoeFcTokensself must be a matrixConvolution(dim,hidden_dim,32,1,useAttention=True),
-        #     # MoeFcTokens(dim,hidden_dim,20,1,useAttention=True),
-        #     nn.Linear(dim, hidden_dim),
-        #     nn.GELU(),
-        #     nn.Dropout(dropout),
-        #     # MoeFcTokensConvolution(hidden_dim,dim,32,1,useAttention=True),
-        #     # MoeFcTokens(hidden_dim,dim,20,1,useAttention=True),
-        #     nn.Linear(hidden_dim, dim),
-        #     nn.Dropout(dropout)
-        # )
+        self.net = nn.Sequential(
+            # MoeFcTokensself must be a matrixConvolution(dim,hidden_dim,32,1,useAttention=True),
+            MoeFcTokens(dim,hidden_dim,64,1,useAttention=True),
+            # nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            # MoeFcTokensConvolution(hidden_dim,dim,32,1,useAttention=True),
+            MoeFcTokens(hidden_dim,dim,64,1,useAttention=True),
+            # nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout)
+        )
 
     def forward(self, x):
-        if not self.firstSet:
-            self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
-            self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
+        # if not self.firstSet:
+        #     self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
+        #     self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
             # self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
             # self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
 
-        x=self.fc1(x)
-        x=nn.GELU()(x)
-        x=nn.Dropout(self.drop)(x)
-        x=self.fc2(x)
-        x=nn.Dropout(self.drop)(x)
-        return x
-        # return self.net(x)
+        # x=self.fc1(x)
+        # x=nn.GELU()(x)
+        # x=nn.Dropout(self.drop)(x)
+        # x=self.fc2(x)
+        # x=nn.Dropout(self.drop)(x)
+        # return x
+        return self.net(x)
 class MixerBlock(nn.Module):
 
     def __init__(self, dim, num_patch, token_dim, channel_dim, dropout = 0.):

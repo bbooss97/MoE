@@ -78,6 +78,38 @@ class SelfAttention(torch.nn.Module):
 
         return attention
 
+#multihead self attention
+class MultiheadSelfAttention(torch.nn.Module):
+    def __init__(self, inputDimension,hiddenDimension,nOfExperts,nOfHeads):
+        super(MultiheadSelfAttention, self).__init__()
+        self.hiddenDimension = hiddenDimension
+        self.nOfHeads=nOfHeads
+        #query and key linear layers
+        self.q = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts*nOfHeads)
+        self.k = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts*nOfHeads)
+        self.inputDimension = inputDimension
+        self.nOfExperts=nOfExperts
+
+
+    def forward(self, input):
+        #get query and keys
+        q=self.q(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts,self.nOfHeads)
+        k=self.k(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts,self.nOfHeads)
+
+        k=torch.permute(k,(0,2,1,3,4))
+
+        #batched matrix multiplication
+        attention=torch.einsum("bijlh,bjklh->biklh", q,k)
+        #scaling factor sqrt of dimension of key vector like in normal self attention
+        attention/=(self.hiddenDimension**0.5)
+        #softmax along the last dimension
+        attention=nn.Softmax(dim=-3)(attention).sum(dim=-4).sum(dim=-1)
+        # attention=torch.softmax(attention,dim=-3)
+        # attention=attention.sum(dim=-4)
+        # attention=attention.sum(dim=-1)
+
+        return attention
+
 class Attention(torch.nn.Module):
     def __init__(self, inputDimension,hiddenDimension,nOfExperts):
         super(Attention, self).__init__()
@@ -375,16 +407,20 @@ class MoeFcTokensConvolution(nn.Module):
         self.k=k
         self.counter=0
         self.useAttention=useAttention
-        self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k,self.outputDimension).to(device) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=3
+        self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k,self.outputDimension) for i in range(self.nOfExperts)])
+        self.hiddenAttentionDimension=32
+        self.nOfHeads=3
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts).to(device)
+            # self.selfAttention=MultiheadSelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts,self.nOfHeads)
+
+
             # self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
             # self.selfAttention=nn.MultiheadAttention(self.inputDimension,self.nOfExperts,batch_first=True)
             # self.finalLinear=nn.Linear(self.inputDimension,self.nOfExperts)
         else:
-            self.gate=nn.Linear(self.inputDimension, self.nOfExperts).to(device)
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         self.counter+=1
@@ -966,6 +1002,77 @@ class MoeRl(nn.Module):
 
         return x
 
+class MoeTransformer(nn.Module):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
+        super(MoeTransformer, self).__init__()
+        self.w=w
+        self.h=h
+        self.nOfPatches=nOfPatches
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
+        if useTokenBasedApproach:
+            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokensConvolution(32,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+        else:
+            self.moefc=MoeFc(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+
+        self.fc1= nn.Linear(self.tokenSize, 32)
+        self.fc2 = nn.Linear(32, 128)
+        self.fc3 = nn.Linear(128, 128)
+       
+        self.fc4= nn.Linear(128*self.nOfExperts,128)
+
+        self.fc5 = nn.Linear(128, 128)
+        self.fc6 = nn.Linear(128, 10)
+        self.fcExpert=ExpertConvolution(32,32)
+
+        self.attention=nn.MultiheadAttention(32,8,batch_first=True)
+        self.norm1=nn.LayerNorm(32)
+        self.norm2=nn.LayerNorm(32)
+
+
+
+    def forward(self, x):
+        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.fc1(x)
+
+        #use self attention with batch first
+        x1=self.attention(x,x,x)[0]
+
+        x=x1+x
+
+        x=self.norm1(x)
+
+        
+
+        x1=self.moefc(x)
+        # x1=self.fcExpert(x1)
+        x1=nn.ReLU()(x1)
+        
+        x=x+x1
+
+        x=self.norm2(x)
+
+
+        x = self.fc2(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc3(x)
+        x=nn.ReLU()(x)
+
+        x=x.view(x.shape[0],-1)
+        x=self.fc4(x)
+        x=nn.ReLU()(x)
+
+
+        x=self.fc5(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc6(x)
+
+        return x
 
 

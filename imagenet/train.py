@@ -24,10 +24,10 @@ print(device)
 
 #declare parameters
 num_epochs=20000
-batch_size=64
+batch_size=100
 nOfPatches=10
 w_and_b=False
-nn_type="moeRl"
+nn_type="moeTransformer"
 
 rl=True
 
@@ -69,7 +69,7 @@ elif nn_type=="moeStack":
     model=moeStack()
 elif nn_type=="mixerMoe":
     model = MLPMixer(in_channels=3, image_size=w, patch_size=16, num_classes=10,
-                     dim=32, depth=2, token_dim=32, channel_dim=256)
+                     dim=32, depth=1, token_dim=32, channel_dim=256)
 elif nn_type=="moeConvolution":
     model=MoeConvolution(w,h,5,128,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="moeCombination":
@@ -80,6 +80,8 @@ elif nn_type=="moeProbabilities":
     model=MoeProbabilities(w,h,5,64,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="moeRl":
     model=MoeRl(w,h,1,64,nOfPatches,useTokenBasedApproach=False,useAttention=False)
+elif nn_type=="moeTransformer":
+    model=MoeTransformer(w,h,3,100,nOfPatches,useTokenBasedApproach=True,useAttention=True)
     
 if w_and_b:
     wandb.watch(model)
@@ -106,7 +108,7 @@ for epoch in range(num_epochs):
         images=images.to(device)
         labels=labels.to(device)
 
-        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution" or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl":
+        if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution" or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl" or nn_type=="moeTransformer":
             #get the patches
             images=images/255
             images=torch.einsum("abcd->adbc",images)
@@ -137,7 +139,10 @@ for epoch in range(num_epochs):
             images=images/255
             images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
- 
+        # elif nn_type=="moeTransformer":
+        #     images=images/255
+        #     images=torch.einsum("abcd->adbc",images)
+        #     outputs=model(images)
        
     
 
@@ -149,6 +154,7 @@ for epoch in range(num_epochs):
             
             
         #backpropagation
+        torch.cuda.empty_cache()
         optimizer.zero_grad()
         l.backward()
         #torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
@@ -186,7 +192,7 @@ for epoch in range(num_epochs):
             images = images.to(device)
             labels = labels.to(device)
 
-            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution"or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl":
+            if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution"or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl" or nn_type=="moeTransformer" or nn_type=="moeTransformer":   
                 #get the patches
                 images=images/255
                 images=torch.einsum("abcd->adbc",images)
@@ -217,6 +223,10 @@ for epoch in range(num_epochs):
                 images=images/255
                 images=torch.einsum("abcd->adbc",images)
                 outputs=model(images)
+            # elif nn_type=="moeTransformer":
+            #     images=images/255
+            #     images=torch.einsum("abcd->adbc",images)
+            #     outputs=model(images)
 
 
             # Store predictions and labels
