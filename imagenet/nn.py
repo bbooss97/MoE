@@ -387,15 +387,15 @@ class MoeFcTokens(nn.Module):
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
-        self.balancingLoss=gateProbabilities.sum(dim=-2)
-        self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
+        # self.balancingLoss=gateProbabilities.sum(dim=-2)
+        # self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         #compute the output of each expert
         for i in range(self.nOfExperts):
             batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            # outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])
+            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
+            # outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])
         return outputs
 
 class MoeFcTokensConvolution(nn.Module):
@@ -1013,49 +1013,44 @@ class MoeTransformer(nn.Module):
         self.nOfExperts=nOfExperts
         self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
 
-        if useTokenBasedApproach:
-            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
-            self.moefc=MoeFcTokensConvolution(32,32,self.nOfExperts,self.k,useAttention=self.useAttention)
-        else:
-            self.moefc=MoeFc(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
-
         self.fc1= nn.Linear(self.tokenSize, 32)
         self.fc2 = nn.Linear(32, 128)
         self.fc3 = nn.Linear(128, 128)
        
-        self.fc4= nn.Linear(128*self.nOfExperts,128)
+        # self.fc4= nn.Linear(128*self.nOfExperts,128)
+        self.fc4=nn.Linear(128*self.nOfPatches**2,128)
 
         self.fc5 = nn.Linear(128, 128)
         self.fc6 = nn.Linear(128, 10)
         self.fcExpert=ExpertConvolution(32,32)
 
-        self.attention=nn.MultiheadAttention(32,8,batch_first=True)
-        self.norm1=nn.LayerNorm(32)
-        self.norm2=nn.LayerNorm(32)
+        #use n conv layers with sequential 
+        self.conv1=nn.Sequential(*[nn.Conv2d(3,3,3,stride=1,padding=1) for i in range(1)])
+
+        self.conv2=nn.Conv2d(3,3,1,stride=1)
+        
+          
+        self.size=int(self.w/self.nOfPatches)
+        
+        self.unfold=torch.nn.Unfold(kernel_size=(self.size,self.size),stride=self.size)
+       
+        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(10)])
+        
+      
 
 
 
     def forward(self, x):
-        x=x.view(x.shape[0],x.shape[1],-1)
+        x=self.conv1(x)
+        x=self.conv2(x)
+       
+        x=self.unfold(x)
+        x=x.transpose(1,2)
+
         x=self.fc1(x)
 
         #use self attention with batch first
-        x1=self.attention(x,x,x)[0]
-
-        x=x1+x
-
-        x=self.norm1(x)
-
-        
-
-        x1=self.moefc(x)
-        # x1=self.fcExpert(x1)
-        x1=nn.ReLU()(x1)
-        
-        x=x+x1
-
-        x=self.norm2(x)
-
+        x=self.transformerMoe(x)
 
         x = self.fc2(x)
         x=nn.ReLU()(x)
@@ -1076,3 +1071,31 @@ class MoeTransformer(nn.Module):
         return x
 
 
+class TransformerMoeFc(nn.Module):
+    def __init__(self,inputDimension,k,nOfExperts,useTokenBasedApproach,useAttention):
+        super(TransformerMoeFc, self).__init__()
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.attention=nn.MultiheadAttention(32,8,batch_first=True)
+        self.norm1=nn.LayerNorm(32)
+        self.norm2=nn.LayerNorm(32)
+        self.expert=Expert(inputDimension,inputDimension)
+        if useTokenBasedApproach:
+            # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+            # self.moefc=MoeFcTokensConvolution(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokens(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
+            # pass
+        else:
+            self.moefc=MoeFc(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
+    
+    def forward(self,x):
+        x1=self.attention(x,x,x)[0]
+        x=x1+x
+        x=self.norm1(x)
+        x1=self.moefc(x)
+        # x1=self.expert(x)
+        x1=nn.ReLU()(x1)
+        x=x+x1
+        x=self.norm2(x)
+        return x
