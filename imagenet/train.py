@@ -10,6 +10,7 @@ from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import accuracy_score
 from mlpMixer import MLPMixer
+from vit_pytorch.vit import ViT
 
 w,h=160,160
 
@@ -18,15 +19,15 @@ datasetTraining=ImagenDataset(w,h,False)
 datasetTest=ImagenDataset(w,h,True)
 
 #device
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device= torch.device("cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device= torch.device("cpu")
 print(device)
 
 #declare parameters
 num_epochs=20000
 batch_size=64
 nOfPatches=10
-w_and_b=False
+w_and_b=True
 nn_type="vit"
 
 rl=True
@@ -54,15 +55,15 @@ elif nn_type=="resnetPretrainedFineTuneFc":
     for i in toFreeze:
         i.requires_grad=False
 elif nn_type=="vit":
-    model = torchvision.models.VisionTransformer(
+    model = ViT(
         image_size=160,
         patch_size=16,
-        num_layers=20,
-        num_heads=8,
-        hidden_dim=32,
-        mlp_dim=32
+        depth=20,
+        heads=8,
+        dim=32,
+        mlp_dim=32,
+        num_classes=10
     )
-    model.heads=torch.nn.Linear(32,10)
 elif nn_type=="moeTransformerFc":
     model=moeTransformerFc()
 elif nn_type=="moeStack":
