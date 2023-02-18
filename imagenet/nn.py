@@ -3,8 +3,9 @@ import torch.nn as nn
 
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# device= torch.device("cpu")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device= torch.device("cpu")
+torch.set_printoptions(threshold=10_000)
 
 class Expert(nn.Module):
     def __init__(self,input,output):
@@ -152,11 +153,12 @@ class MoeFcTokensParallel(nn.Module):
         self.counter=0
         self.useAttention=useAttention
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=3
+        self.hiddenAttentionDimension=1
+        self.first=True
         #self.w = torch.ones(self.nOfExperts,self.inputDimension,self.outputDimension)
         
-        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
-        self.bias1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
+        # self.bias1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.outputDimension)),requires_grad=True).to(device)
 
         # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
         # self.bias2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
@@ -164,7 +166,6 @@ class MoeFcTokensParallel(nn.Module):
         # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
         # self.bias3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
 
-        self.first=True
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -186,38 +187,68 @@ class MoeFcTokensParallel(nn.Module):
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
         outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
-
+        
         if self.first:
             self.first=False
-            i=torch.ones_like(topKindices).nonzero()
+            # self.resetParameters()
+            i=torch.ones(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1]).nonzero()
+            self.ones=torch.ones([topKindices.shape[2],topKindices.shape[0]*topKindices.shape[1],1]).to(device)
             self.a=i[:,0]
             self.b=i[:,1]
             self.c=i[:,2]
-        inp=x[self.a,topKindices[self.a,self.b,self.c]]
+        top=topKindices.permute([2,0,1]).reshape(-1)
+        inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
 
-        exp=self.weight1[self.c,:,:]
-        b=self.bias1[self.c,:]
-        out=torch.einsum("ab,abc->ac", inp,exp)
-        out=out+b
-        out=torch.relu(out)
+        #cat one to the input
+        if self.first:
+            self.ones=torch.ones(inp.shape[0],inp.shape[1],1).to(device)
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        
+        #multiply by the probabilities 
+        topKvalues=topKvalues.permute([2,0,1]).reshape(topKvalues.shape[2],-1)[:,:,None]
 
-        exp=self.weight2[self.c,:,:]
-        b=self.bias2[self.c,:]
-        out=torch.einsum("ab,abc->ac", out,exp)
-        out=out+b
-        out=torch.relu(out)
+        out=out*topKvalues
 
-        exp=self.weight3[self.c,:,:]
-        b=self.bias3[self.c,:]
-        out=torch.einsum("ab,abc->ac", out,exp)
-        out=out+b
+        out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
 
-        prob=gateProbabilities[self.a,topKindices[self.a,self.b,self.c],self.c]
-        out=out*prob.view(-1,1)
 
-        outputs[self.a,topKindices[self.a,self.b,self.c],:]+=out
+        
+        # outputs[,topKindices]=out[]
 
         return outputs
+
+
+        # if self.first:
+        #     self.first=False
+        #     i=torch.ones_like(topKindices).nonzero()
+        #     self.a=i[:,0]
+        #     self.b=i[:,1]
+        #     self.c=i[:,2]
+        # inp=x[self.a,topKindices[self.a,self.b,self.c]]
+
+        # exp=self.weight1[self.c,:,:]
+        # b=self.bias1[self.c,:]
+        # out=torch.einsum("ab,abc->ac", inp,exp)
+        # out=out+b
+        # out=torch.relu(out)
+
+        # exp=self.weight2[self.c,:,:]
+        # b=self.bias2[self.c,:]
+        # out=torch.einsum("ab,abc->ac", out,exp)
+        # out=out+b
+        # out=torch.relu(out)
+
+        # exp=self.weight3[self.c,:,:]
+        # b=self.bias3[self.c,:]
+        # out=torch.einsum("ab,abc->ac", out,exp)
+        # out=out+b
+
+        # prob=gateProbabilities[self.a,topKindices[self.a,self.b,self.c],self.c]
+        # out=out*prob.view(-1,1)
+
+        # outputs[self.a,topKindices[self.a,self.b,self.c],:]+=out
+
 
 class MlpPatches(nn.Module):
     def __init__(self,w,h,nOfPatches):
@@ -408,7 +439,7 @@ class MoeFcTokensConvolution(nn.Module):
         self.counter=0
         self.useAttention=useAttention
         self.experts=nn.ModuleList([ExpertConvolution(self.inputDimension*k,self.outputDimension) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=32
+        self.hiddenAttentionDimension=1
         self.nOfHeads=3
 
         if self.useAttention:
@@ -1034,7 +1065,7 @@ class MoeTransformer(nn.Module):
         
         self.unfold=torch.nn.Unfold(kernel_size=(self.size,self.size),stride=self.size)
        
-        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(10)])
+        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(1)])
         
       
 
@@ -1084,7 +1115,8 @@ class TransformerMoeFc(nn.Module):
         if useTokenBasedApproach:
             # self.moefc=MoeFcTokensConvolution(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)
             # self.moefc=MoeFcTokensConvolution(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
-            self.moefc=MoeFcTokens(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
+            # self.moefc=MoeFcTokens(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
+            self.moefc=MoeFcTokensParallel(inputDimension,inputDimension,self.nOfExperts,self.k,useAttention=self.useAttention)
             # pass
         else:
             self.moefc=MoeFc(self.tokenSize,32,self.nOfExperts,self.k,useAttention=self.useAttention)

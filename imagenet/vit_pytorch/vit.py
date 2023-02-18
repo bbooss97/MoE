@@ -68,7 +68,7 @@ class MoeFcTokens(nn.Module):
         self.counter=0
         self.useAttention=useAttention
         self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension,self.dropout) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=3
+        self.hiddenAttentionDimension=1
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -118,7 +118,7 @@ class FeedForward(nn.Module):
         #     nn.Linear(hidden_dim, dim),
         #     nn.Dropout(dropout)
         # )
-        self.net = MoeFcTokens(dim, hidden_dim, dropout, 32, 1, useAttention=False)
+        self.net = MoeFcTokens(dim, hidden_dim, dropout, 32, 1, useAttention=True)
     def forward(self, x):
         return self.net(x)
 

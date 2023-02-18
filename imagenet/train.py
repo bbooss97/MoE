@@ -19,16 +19,16 @@ datasetTraining=ImagenDataset(w,h,False)
 datasetTest=ImagenDataset(w,h,True)
 
 #device
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# device= torch.device("cpu")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device= torch.device("cpu")
 print(device)
 
 #declare parameters
 num_epochs=20000
-batch_size=64
+batch_size=32
 nOfPatches=10
-w_and_b=True
-nn_type="vit"
+w_and_b=False
+nn_type="moeTransformer"
 
 rl=True
 
@@ -48,6 +48,9 @@ elif nn_type=="mlp_patches":
 elif nn_type=="resnetFrom0":
     model=torch.hub.load('pytorch/vision:v0.6.0', 'resnet18',pretrained=False)
     model.fc=torch.nn.Linear(512,10)
+elif nn_type=="resnetPretrainedFineTuneAll":
+    model=torch.hub.load('pytorch/vision:v0.6.0', 'resnet18', pretrained=True)
+    model.fc=torch.nn.Linear(512,10)
 elif nn_type=="resnetPretrainedFineTuneFc":
     model=torch.hub.load('pytorch/vision:v0.6.0', 'resnet18', pretrained=True)
     model.fc=torch.nn.Linear(512,10)
@@ -57,11 +60,11 @@ elif nn_type=="resnetPretrainedFineTuneFc":
 elif nn_type=="vit":
     model = ViT(
         image_size=160,
-        patch_size=16,
-        depth=20,
+        patch_size=40,
+        depth=10,
         heads=8,
-        dim=32,
-        mlp_dim=32,
+        dim=64,
+        mlp_dim=64,
         num_classes=10
     )
 elif nn_type=="moeTransformerFc":
@@ -129,6 +132,10 @@ for epoch in range(num_epochs):
             images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
         elif nn_type =="resnetPretrainedFineTuneFc":
+            images=images/255
+            images=torch.einsum("abcd->adbc",images)
+            outputs=model(images)
+        elif nn_type =="resnetPretrainedFineTuneAll":
             images=images/255
             images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
