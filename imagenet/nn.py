@@ -3,8 +3,8 @@ import torch.nn as nn
 
 
 
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device= torch.device("cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device= torch.device("cpu")
 torch.set_printoptions(threshold=10_000)
 
 class Expert(nn.Module):
@@ -186,16 +186,16 @@ class MoeFcTokensParallel(nn.Module):
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
-        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        # outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         
         if self.first:
             self.first=False
             # self.resetParameters()
             i=torch.ones(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1]).nonzero()
             self.ones=torch.ones([topKindices.shape[2],topKindices.shape[0]*topKindices.shape[1],1]).to(device)
-            self.a=i[:,0]
-            self.b=i[:,1]
-            self.c=i[:,2]
+            self.a=i[:,0].to(device)
+            self.b=i[:,1].to(device)
+            self.c=i[:,2].to(device)
         top=topKindices.permute([2,0,1]).reshape(-1)
         inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
 
@@ -212,11 +212,11 @@ class MoeFcTokensParallel(nn.Module):
 
         out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
 
-
+        out=out.permute([1,0,2,3]).reshape(x.shape[0],-1,self.outputDimension)
         
         # outputs[,topKindices]=out[]
 
-        return outputs
+        return out
 
 
         # if self.first:
@@ -1065,7 +1065,7 @@ class MoeTransformer(nn.Module):
         
         self.unfold=torch.nn.Unfold(kernel_size=(self.size,self.size),stride=self.size)
        
-        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(1)])
+        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(5)])
         
       
 
