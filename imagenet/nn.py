@@ -186,7 +186,7 @@ class MoeFcTokensParallel(nn.Module):
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
 
-        # outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
         
         if self.first:
             self.first=False
@@ -198,10 +198,6 @@ class MoeFcTokensParallel(nn.Module):
             self.c=i[:,2].to(device)
         top=topKindices.permute([2,0,1]).reshape(-1)
         inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
-
-        #cat one to the input
-        if self.first:
-            self.ones=torch.ones(inp.shape[0],inp.shape[1],1).to(device)
 
         inp=torch.cat((inp,self.ones),dim=-1)
         out = torch.bmm(inp,self.weight1)
@@ -217,12 +213,12 @@ class MoeFcTokensParallel(nn.Module):
         out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
 
         out=out.permute([1,0,2,3])
-        out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
-        # out=out.reshape(x.shape[0],-1,self.outputDimension)
-        out=out.sum(dim=2)
+        # out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
+        out=out.reshape(x.shape[0],-1,self.outputDimension)
+        # out=out.sum(dim=2)
         
 
-        # outputs[self.b,top]+=out[self.b,top].reshape(x.shape[0],-1,self.outputDimension)
+        outputs[self.b,top]+=out[self.b,top]#.reshape(x.shape[0],-1,self.outputDimension)
 
 
         return out
