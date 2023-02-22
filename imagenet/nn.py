@@ -152,13 +152,12 @@ class MoeFcTokensParallel(nn.Module):
         self.k=k
         self.counter=0
         self.useAttention=useAttention
-        self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension) for i in range(self.nOfExperts)])
         self.hiddenAttentionDimension=1
         self.first=True
         #self.w = torch.ones(self.nOfExperts,self.inputDimension,self.outputDimension)
         
         self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
-        # self.bias1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.outputDimension)),requires_grad=True).to(device)
+        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
 
         # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
         # self.bias2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
@@ -182,6 +181,7 @@ class MoeFcTokensParallel(nn.Module):
             gateLogits=self.gate(x)
             #compute the probability of each expert
             gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+            # gateProbabilities=gateLogits
 
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
@@ -202,8 +202,12 @@ class MoeFcTokensParallel(nn.Module):
         #cat one to the input
         if self.first:
             self.ones=torch.ones(inp.shape[0],inp.shape[1],1).to(device)
+
         inp=torch.cat((inp,self.ones),dim=-1)
         out = torch.bmm(inp,self.weight1)
+        # out=nn.GELU()(out)
+        # out=torch.cat((out,self.ones),dim=-1)
+        # out = torch.bmm(out,self.weight2)
         
         #multiply by the probabilities 
         topKvalues=topKvalues.permute([2,0,1]).reshape(topKvalues.shape[2],-1)[:,:,None]
@@ -212,9 +216,14 @@ class MoeFcTokensParallel(nn.Module):
 
         out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
 
-        out=out.permute([1,0,2,3]).reshape(x.shape[0],-1,self.outputDimension)
+        out=out.permute([1,0,2,3])
+        out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
+        # out=out.reshape(x.shape[0],-1,self.outputDimension)
+        out=out.sum(dim=2)
         
-        # outputs[,topKindices]=out[]
+
+        # outputs[self.b,top]+=out[self.b,top].reshape(x.shape[0],-1,self.outputDimension)
+
 
         return out
 
@@ -1065,7 +1074,7 @@ class MoeTransformer(nn.Module):
         
         self.unfold=torch.nn.Unfold(kernel_size=(self.size,self.size),stride=self.size)
        
-        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(5)])
+        self.transformerMoe=nn.Sequential(*[TransformerMoeFc(32,self.k,self.nOfExperts,useTokenBasedApproach,useAttention) for i in range(1)])
         
       
 
@@ -1131,3 +1140,51 @@ class TransformerMoeFc(nn.Module):
         x=x+x1
         x=self.norm2(x)
         return x
+
+class MoeWide(nn.Module):
+    def __init__(self,w,h,k,nOfExperts,nOfPatches,useTokenBasedApproach=False,useAttention=False):
+        super(MoeWide, self).__init__()
+        self.w=w
+        self.h=h
+        self.nOfPatches=nOfPatches
+        self.k=k
+        self.useAttention=useAttention
+        self.nOfExperts=nOfExperts
+        self.tokenSize=int(3*(self.w/self.nOfPatches)*(self.h/self.nOfPatches))
+        self.nout=5
+
+        self.fc1= nn.Linear(self.tokenSize, 32)
+        self.fc2 = nn.Linear(self.nOfExperts*self.nout,32 )
+        self.fc3 = nn.Linear(32, 10)
+       
+
+        self.moe=MoeFcTokensParallel(32,self.nout,self.nOfExperts,self.k,useAttention=self.useAttention)
+          
+        self.size=int(self.w/self.nOfPatches)
+        
+        self.unfold=torch.nn.Unfold(kernel_size=(self.size,self.size),stride=self.size)
+       
+
+      
+
+
+
+    def forward(self, x):
+       
+        x=self.unfold(x)
+        x=x.transpose(1,2)
+
+        x=self.fc1(x)
+
+        #use self attention with batch first
+        x=self.moe(x).reshape(x.shape[0],-1)
+        x=nn.ReLU()(x)
+
+
+        x = self.fc2(x)
+        x=nn.ReLU()(x)
+
+        x=self.fc3(x)
+
+        return x
+
