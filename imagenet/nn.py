@@ -221,7 +221,7 @@ class MoeFcTokensParallel(nn.Module):
         outputs[self.b,top]+=out[self.b,top]#.reshape(x.shape[0],-1,self.outputDimension)
 
 
-        return out
+        return outputs
 class MoeFcTokensParallelConvolution(nn.Module):
     def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
         super(MoeFcTokensParallelConvolution, self).__init__()
