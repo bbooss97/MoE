@@ -226,6 +226,67 @@ class MoeFcTokensParallel(nn.Module):
 
 
         return out
+class MoeFcTokensParallelConvolution(nn.Module):
+    def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
+        super(MoeFcTokensParallelConvolution, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=1
+        self.first=True
+        
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension*self.k+1,self.outputDimension)),requires_grad=True).to(device)
+        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension*self.k+1,self.outputDimension)),requires_grad=True).to(device)
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateProbabilities=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+            #compute the probability of each expert
+            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+            # gateProbabilities=gateLogits
+
+        #get the topk
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+        
+        if self.first:
+            self.first=False
+            # self.resetParameters()
+            i=torch.ones(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1]).nonzero()
+            self.ones=torch.ones([topKindices.shape[2],topKindices.shape[0],1]).to(device)
+            self.a=i[:,0].to(device)
+            self.b=i[:,1].to(device)
+            self.c=i[:,2].to(device)
+        top=topKindices.permute([2,0,1]).reshape(-1)
+        inp=x[self.b,top].reshape(topKindices.shape[2],topKindices.shape[0],-1)
+
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        out=nn.GELU()(out)
+        # out=torch.cat((out,self.ones),dim=-1)
+        # out = torch.bmm(out,self.weight2)
+        
+        #multiply by the probabilities 
+        topKvalues=topKvalues.permute([2,0,1]).sum(dim=-1)[:,:,None]
+
+        out=out*topKvalues
+
+
+        out=out.permute([1,0,2])
+
+
+        return out
 
 
         # if self.first:
