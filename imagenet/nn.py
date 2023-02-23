@@ -144,7 +144,7 @@ class Attention(torch.nn.Module):
         return attention
 
 class MoeFcTokensParallel(nn.Module):
-    def __init__(self,inputDimension, outputDimension,nOfExperts,k,useAttention=False):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k,useAttention=False,dropout=0.):
         super(MoeFcTokensParallel, self).__init__()
         self.inputDimension=inputDimension
         self.outputDimension=outputDimension
@@ -153,11 +153,12 @@ class MoeFcTokensParallel(nn.Module):
         self.counter=0
         self.useAttention=useAttention
         self.hiddenAttentionDimension=1
+        self.hiddenDimension=hiddenDimension
         self.first=True
-        #self.w = torch.ones(self.nOfExperts,self.inputDimension,self.outputDimension)
+        self.dropout=dropout
         
-        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
-        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
 
         # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
         # self.bias2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
@@ -196,14 +197,16 @@ class MoeFcTokensParallel(nn.Module):
             self.a=i[:,0].to(device)
             self.b=i[:,1].to(device)
             self.c=i[:,2].to(device)
+            self.final=torch.ones_like(topKindices.reshape(topKindices.shape[0],-1)).nonzero()[:,1].to(device)
         top=topKindices.permute([2,0,1]).reshape(-1)
         inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
 
         inp=torch.cat((inp,self.ones),dim=-1)
         out = torch.bmm(inp,self.weight1)
-        # out=nn.GELU()(out)
-        # out=torch.cat((out,self.ones),dim=-1)
-        # out = torch.bmm(out,self.weight2)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
         
         #multiply by the probabilities 
         topKvalues=topKvalues.permute([2,0,1]).reshape(topKvalues.shape[2],-1)[:,:,None]
@@ -213,12 +216,13 @@ class MoeFcTokensParallel(nn.Module):
         out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
 
         out=out.permute([1,0,2,3])
+
         # out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
         out=out.reshape(x.shape[0],-1,self.outputDimension)
         # out=out.sum(dim=2)
         
 
-        outputs[self.b,top]+=out[self.b,top]#.reshape(x.shape[0],-1,self.outputDimension)
+        outputs[self.b,top]+=out[self.b,self.final]#.reshape(x.shape[0],-1,self.outputDimension)
 
 
         return outputs
