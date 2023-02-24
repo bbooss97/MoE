@@ -3,102 +3,20 @@ from torch import nn
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
+from nn import Expert
+from nn import MoeFcTokens
+from nn import MoeFcTokensParallel
+from nn import MoeFcTokensParallelConvolution
+from nn import MoeRlParallel
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device=torch.device("cpu")
+
 # helpers
 
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
 
-# classes
-#experts
-class Expert(nn.Module):
-    def __init__(self,input,hidden_dim,dropout=0.):
-        self.input=input
-        self.hidden_dim=hidden_dim
-        self.dropout=dropout
-        super(Expert, self).__init__()
-        self.fc1=nn.Linear(self.input,self.hidden_dim)
-        self.fc2=nn.Linear(self.hidden_dim,self.input)
-
-    def forward(self, x):
-        x=self.fc1(x)
-        x=nn.GELU()(x)
-        x=nn.Dropout(self.dropout)(x)
-        x=self.fc2(x)
-        x=nn.Dropout(self.dropout)(x)
-        return x
-
-#self attention
-class SelfAttention(torch.nn.Module):
-    def __init__(self, inputDimension,hiddenDimension,nOfExperts):
-        super(SelfAttention, self).__init__()
-        self.hiddenDimension = hiddenDimension
-        #query and key linear layers
-        self.q = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
-        self.k = torch.nn.Linear(inputDimension, hiddenDimension*nOfExperts)
-        self.inputDimension = inputDimension
-        self.nOfExperts=nOfExperts
-
-    def forward(self, input):
-        #get query and keys
-        q=self.q(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
-        k=self.k(input).view(input.shape[0],input.shape[1],self.hiddenDimension,self.nOfExperts)
-
-        k=torch.permute(k,(0,2,1,3))
-
-        #batched matrix multiplication
-        attention=torch.einsum("bijl,bjkl->bikl", q,k)
-        #scaling factor sqrt of dimension of key vector like in normal self attention
-        attention=attention/(self.hiddenDimension**0.5)
-        #softmax along the last dimension
-        attention=torch.softmax(attention,dim=-2)
-        attention=attention.sum(dim=-3)
-
-        return attention
-#moe tokens
-class MoeFcTokens(nn.Module):
-    def __init__(self,inputDimension, outputDimension,dropout,nOfExperts,k,useAttention=False):
-        super(MoeFcTokens, self).__init__()
-        self.inputDimension=inputDimension
-        self.outputDimension=outputDimension
-        self.dropout=dropout
-        self.nOfExperts=nOfExperts
-        self.k=k
-        self.counter=0
-        self.useAttention=useAttention
-        self.experts=nn.ModuleList([Expert(self.inputDimension,self.outputDimension,self.dropout) for i in range(self.nOfExperts)])
-        self.hiddenAttentionDimension=1
-
-        if self.useAttention:
-            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
-            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
-        else:
-            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
-
-    def forward(self, x):
-        self.counter+=1
-        #compute the logits of the gate
-        if self.useAttention:
-            gateProbabilities=self.selfAttention(x)
-        else:
-            gateLogits=self.gate(x)
-            #compute the probability of each expert
-            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
-
-        #get the topk
-        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
-
-        # self.balancingLoss=gateProbabilities.sum(dim=-2)
-        # self.balancingLoss=nn.MSELoss()(self.balancingLoss,torch.ones(self.balancingLoss.shape).to(device)*x.shape[1]/self.nOfExperts).to(device)
-
-        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
-        #compute the output of each expert
-        for i in range(self.nOfExperts):
-            batch_indices=torch.arange(x.shape[0]).reshape(-1,1).expand(x.shape[0],self.k).reshape(-1)
-            outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=(self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)]).T * gateProbabilities[batch_indices,topKindices[:,:,i].reshape(-1),i]).T
-            # outputs[batch_indices,topKindices[:,:,i].reshape(-1)]+=self.experts[i](x[batch_indices,topKindices[:,:,i].reshape(-1)])
-        return outputs
 
 class PreNorm(nn.Module):
     def __init__(self, dim, fn):
@@ -118,9 +36,19 @@ class FeedForward(nn.Module):
         #     nn.Linear(hidden_dim, dim),
         #     nn.Dropout(dropout)
         # )
-        self.net = MoeFcTokens(dim, hidden_dim, dropout, 32, 1, useAttention=True)
+        # self.net= nn.Sequential(
+        #     MoeFcTokensParallel(dim, hidden_dim, 101, 1, useAttention=False),
+        #     # nn.Linear(dim, hidden_dim),
+        #     nn.GELU(),
+        #     nn.Dropout(dropout),
+        #     MoeFcTokensParallel(hidden_dim, dim, 101, 1, useAttention=False),
+        #     nn.Dropout(dropout)
+        # )
+        self.net = MoeRlParallel(dim,hidden_dim, dim, 64, 1, useAttention=False,dropout=dropout)
     def forward(self, x):
-        return self.net(x)
+        x=self.net(x)
+        # x=nn.Dropout(0.5)(x)
+        return x
 
 class Attention(nn.Module):
     def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):

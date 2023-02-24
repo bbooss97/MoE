@@ -11,33 +11,50 @@ from sklearn.metrics import recall_score
 from sklearn.metrics import accuracy_score
 from mlpMixer import MLPMixer
 from vit_pytorch.vit import ViT
+# from vit_pytorch.vit_for_small_dataset import ViT
+import torchvision.transforms as transforms
 
-w,h=160,160
-
-#read the dataset
-datasetTraining=ImagenDataset(w,h,False)
-datasetTest=ImagenDataset(w,h,True)
-
-#device
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device= torch.device("cpu")
-print(device)
-
+w,h=320,320
 #declare parameters
+augment=True
 num_epochs=20000
-batch_size=32
+batch_size=10
 nOfPatches=10
-w_and_b=False
-nn_type="moeTransformer"
+w_and_b=False 
+nn_type="vit"
 
 rl=True
+
+
+#read the dataset
+datasetTraining=ImagenDataset(w,h,False,augment=augment)
+datasetTest=ImagenDataset(w,h,True,augment=False)
+
+# datasetTraining=torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.Compose([
+#     transforms.RandomCrop(32, padding=4),
+#     transforms.Resize(w),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ]))
+# datasetTest=torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transforms.Compose([
+#     transforms.Resize(w),
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ]))
+
+#device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device= torch.device("cpu")
+print(device)
+
 
 if w_and_b:
     wandb.init(project='moe', entity='bbooss97',name=nn_type)
 
 #dataloader
-train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True)
-test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=True , drop_last=True)
+train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
+test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
 
 if nn_type=="mlp":
     model=Mlp(w,h)
@@ -59,12 +76,14 @@ elif nn_type=="resnetPretrainedFineTuneFc":
         i.requires_grad=False
 elif nn_type=="vit":
     model = ViT(
-        image_size=160,
-        patch_size=40,
-        depth=10,
+        image_size=w,
+        patch_size=32,
+        depth=1,
         heads=8,
-        dim=64,
-        mlp_dim=64,
+        dim=128,
+        mlp_dim=128,
+        dropout=0.1,
+        emb_dropout=0.1,
         num_classes=10
     )
 elif nn_type=="moeTransformerFc":
@@ -72,8 +91,8 @@ elif nn_type=="moeTransformerFc":
 elif nn_type=="moeStack":
     model=moeStack()
 elif nn_type=="mixerMoe":
-    model = MLPMixer(in_channels=3, image_size=w, patch_size=16, num_classes=10,
-                     dim=32, depth=1, token_dim=32, channel_dim=256)
+    model = MLPMixer(in_channels=3, image_size=w, patch_size=4, num_classes=10,
+                     dim=128, depth=6, token_dim=128, channel_dim=128)
 elif nn_type=="moeConvolution":
     model=MoeConvolution(w,h,5,128,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="moeCombination":
@@ -85,7 +104,9 @@ elif nn_type=="moeProbabilities":
 elif nn_type=="moeRl":
     model=MoeRl(w,h,1,64,nOfPatches,useTokenBasedApproach=False,useAttention=False)
 elif nn_type=="moeTransformer":
-    model=MoeTransformer(w,h,3,64,nOfPatches,useTokenBasedApproach=True,useAttention=True)
+    model=MoeTransformer(w,h,2,50,nOfPatches,useTokenBasedApproach=True,useAttention=False)
+elif nn_type=="moeWide":
+    model=MoeWide(w,h,3,1000,nOfPatches,useTokenBasedApproach=True,useAttention=False)
     
 if w_and_b:
     wandb.watch(model)
@@ -94,7 +115,7 @@ model=model.to(device)
 
 #define loss and the optimizer
 loss=nn.CrossEntropyLoss()
-optimizer=torch.optim.Adam(model.parameters())
+optimizer=torch.optim.Adam(model.parameters(),lr=0.0001)
 
 
 for epoch in range(num_epochs):
@@ -106,7 +127,7 @@ for epoch in range(num_epochs):
 
     #normal loop for training
     #train loop
-    for i, (images, labels,paths) in enumerate(train_dataloader):
+    for i, (images, labels) in enumerate(train_dataloader):
 
         #move the data to the device
         images=images.to(device)
@@ -114,8 +135,8 @@ for epoch in range(num_epochs):
 
         if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution" or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl" :
             #get the patches
-            images=images/255
-            images=torch.einsum("abcd->adbc",images)
+            # images=images/255
+            # images=torch.einsum("abcd->adbc",images)
             size=int(images.shape[2]/nOfPatches)
             unfold=torch.nn.Unfold(kernel_size=(size,size),stride=size)
             patches=unfold(images)
@@ -140,16 +161,20 @@ for epoch in range(num_epochs):
             images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
         elif nn_type =="vit":
-            images=images/255
-            images=torch.einsum("abcd->adbc",images)
+            # images=images/255
+            # images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
         elif nn_type =="mixerMoe":
-            images=images/255
-            images=torch.einsum("abcd->adbc",images)
+            # images=images/255
+            # images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
         elif nn_type=="moeTransformer":
-            images=images/255
-            images=torch.einsum("abcd->adbc",images)
+            # images=images/255
+            # images=torch.einsum("abcd->adbc",images)
+            outputs=model(images)
+        elif nn_type=="moeWide":
+            # images=images/255
+            # images=torch.einsum("abcd->adbc",images)
             outputs=model(images)
        
     
@@ -194,7 +219,7 @@ for epoch in range(num_epochs):
 
     # Loop over the data in the test set
     with torch.no_grad():
-        for i,(images, labels,paths) in enumerate(test_dataloader):
+        for i,(images, labels) in enumerate(test_dataloader):
 
             # Move the data to the device
             images = images.to(device)
@@ -202,8 +227,8 @@ for epoch in range(num_epochs):
 
             if nn_type=="moe" or nn_type=="mlp_patches" or nn_type=="moeTransformerFc" or nn_type=="moeStack" or nn_type=="moeConvolution"or nn_type=="moeCombination" or nn_type=="moeMix" or nn_type=="moeProbabilities" or nn_type=="moeRl" :   
                 #get the patches
-                images=images/255
-                images=torch.einsum("abcd->adbc",images)
+                # images=images/255
+                # images=torch.einsum("abcd->adbc",images)
                 size=int(images.shape[2]/nOfPatches)
                 unfold=torch.nn.Unfold(kernel_size=(size,size),stride=size)
                 patches=unfold(images)
@@ -224,16 +249,18 @@ for epoch in range(num_epochs):
                 images=torch.einsum("abcd->adbc",images)
                 outputs=model(images)
             elif nn_type =="vit":
-                images=images/255
-                images=torch.einsum("abcd->adbc",images)
+                # images=images/255
+                # images=torch.einsum("abcd->adbc",images)
                 outputs=model(images)
             elif nn_type =="mixerMoe":
-                images=images/255
-                images=torch.einsum("abcd->adbc",images)
+                # images=images/255
+                # images=torch.einsum("abcd->adbc",images)
                 outputs=model(images)
             elif nn_type=="moeTransformer":
-                images=images/255
-                images=torch.einsum("abcd->adbc",images)
+                # images=images/255
+                # images=torch.einsum("abcd->adbc",images)
+                outputs=model(images)
+            elif nn_type=="moeWide":
                 outputs=model(images)
 
 
@@ -257,17 +284,29 @@ for epoch in range(num_epochs):
     # Compute average loss
     avg_loss = l / len(test_dataloader)
     
+    # # Compute accuracy
+    # accuracy = accuracy_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1))
+
+    # # Compute f1 score
+    # f1 = f1_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+
+    # # Compute precision
+    # precision = precision_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+
+    # # Compute recall
+    # recall = recall_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+
     # Compute accuracy
-    accuracy = accuracy_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1))
+    accuracy = accuracy_score(testLabels, testOutputs.argmax(dim=1))
 
     # Compute f1 score
-    f1 = f1_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+    f1 = f1_score(testLabels, testOutputs.argmax(dim=1), average='macro')
 
     # Compute precision
-    precision = precision_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+    precision = precision_score(testLabels, testOutputs.argmax(dim=1), average='macro')
 
     # Compute recall
-    recall = recall_score(testLabels.argmax(dim=1), testOutputs.argmax(dim=1), average='macro')
+    recall = recall_score(testLabels, testOutputs.argmax(dim=1), average='macro')
 
     # Print the metrics
     print(f'Test loss: {avg_loss:.4f}')

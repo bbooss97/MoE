@@ -4,6 +4,7 @@ from torch import nn
 from einops.layers.torch import Rearrange
 from nn import MoeFcTokens
 from nn import MoeFcTokensConvolution
+from nn import MoeFcTokensParallel
 
 
 class FeedForward(nn.Module):
@@ -12,42 +13,35 @@ class FeedForward(nn.Module):
         self.drop=dropout
         self.dim=dim
         self.hidden_dim=hidden_dim
-        self.firstSet=False
+        self.initialize=True
 
         # self.fc1=nn.Linear(dim,hidden_dim)
         # self.fc2=nn.Linear(hidden_dim,dim)
 
+        # self.fc1=MoeFcTokensParallel(hidden_dim,dim,hidden_dim,1,useAttention=False)
+        # self.fc2=MoeFcTokensParallel(dim,hidden_dim,hidden_dim,1,useAttention=False)
+
+        # self.fc3=MoeFcTokensParallel(dim,dim,100,1,useAttention=False)
+        # self.fc4=MoeFcTokensParallel(hidden_dim,dim,100,1,useAttention=False)
+
         
 
-        # self.fc1=MoeFcTokens(dim,hidden_dim,20,1,useAttention=False)
-        # self.fc2=MoeFcTokens(hidden_dim,dim,20,1,useAttention=False)
-
         self.net = nn.Sequential(
-            # MoeFcTokensself must be a matrixConvolution(dim,hidden_dim,32,1,useAttention=True),
-            MoeFcTokens(dim,hidden_dim,64,1,useAttention=True),
-            # nn.Linear(dim, hidden_dim),
+            nn.Linear(dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
-            # MoeFcTokensConvolution(hidden_dim,dim,32,1,useAttention=True),
-            MoeFcTokens(hidden_dim,dim,64,1,useAttention=True),
-            # nn.Linear(hidden_dim, dim),
+            nn.Linear(hidden_dim, dim),
             nn.Dropout(dropout)
         )
+        # self.net=MoeFcTokensParallel(dim,hidden_dim, dim, 64, 1, useAttention=False,dropout=dropout)
 
     def forward(self, x):
-        # if not self.firstSet:
-        #     self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
-        #     self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
-            # self.fc1=MoeFcTokensConvolution(self.dim,self.hidden_dim,x.shape[-2],1,useAttention=False)
-            # self.fc2=MoeFcTokensConvolution(self.hidden_dim,self.dim,x.shape[-2],1,useAttention=False)
-
-        # x=self.fc1(x)
-        # x=nn.GELU()(x)
-        # x=nn.Dropout(self.drop)(x)
-        # x=self.fc2(x)
-        # x=nn.Dropout(self.drop)(x)
-        # return x
-        return self.net(x)
+        # if self.initialize:
+        #     self.net=MoeFcTokensConvolution(x.shape[-1],x.shape[-1],x.shape[1],1,useAttention=False).to(x.device)
+        #     self.initialize=False
+        x=self.net(x)
+        return x
+        
 class MixerBlock(nn.Module):
 
     def __init__(self, dim, num_patch, token_dim, channel_dim, dropout = 0.):
@@ -65,8 +59,9 @@ class MixerBlock(nn.Module):
             FeedForward(dim, channel_dim, dropout),
         )
 
-    def forward(self, x):
+        self.first=True
 
+    def forward(self, x):
         x = x + self.token_mix(x)
 
         x = x + self.channel_mix(x)
@@ -76,7 +71,7 @@ class MixerBlock(nn.Module):
 
 class MLPMixer(nn.Module):
 
-    def __init__(self, in_channels, dim, num_classes, patch_size, image_size, depth, token_dim, channel_dim):
+    def __init__(self, in_channels, dim, num_classes, patch_size, image_size, depth, token_dim, channel_dim,dropout=0.):
         super().__init__()
 
         assert image_size % patch_size == 0, 'Image dimensions must be divisible by the patch size.'
@@ -89,13 +84,14 @@ class MLPMixer(nn.Module):
         self.mixer_blocks = nn.ModuleList([])
 
         for _ in range(depth):
-            self.mixer_blocks.append(MixerBlock(dim, self.num_patch, token_dim, channel_dim))
+            self.mixer_blocks.append(MixerBlock(dim, self.num_patch, token_dim, channel_dim,dropout))
 
         self.layer_norm = nn.LayerNorm(dim)
 
         self.mlp_head = nn.Sequential(
             nn.Linear(dim, num_classes)
         )
+        self.first=True
 
     def forward(self, x):
 
@@ -108,5 +104,6 @@ class MLPMixer(nn.Module):
         x = self.layer_norm(x)
 
         x = x.mean(dim=1)
+        
 
         return self.mlp_head(x)
