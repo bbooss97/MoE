@@ -644,61 +644,26 @@ class vit(nn.Module):
 class moeStack(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.moe1=MoeFcTokensConvolution(768,128,20,3,useAttention=True)
-        self.moe2=MoeFcTokensConvolution(128,128,20,3,useAttention=True)
-        self.moe3=MoeFcTokensConvolution(128,128,20,3,useAttention=True)
-        self.moe4=MoeFcTokensConvolution(128,128,20,3,useAttention=True)
-        self.moe5=MoeFcTokensConvolution(128,128,20,3,useAttention=True)
-        self.moe6=MoeFcTokensConvolution(128,128,20,3,useAttention=True)
-        self.fc1=nn.Linear(128*20,128*20)
-        self.fc2=nn.Linear(128*20,128*20)
-        self.fc3=nn.Linear(128*20,128*20)
-        self.fc4=nn.Linear(128*20,128*20)
-        self.fc5=nn.Linear(128*20,128*20)
-        self.fc6=nn.Linear(128*20,128*20)
-
-
-
-       
-        self.lastLayer=nn.Linear(128*20,128)
-        self.lastLayer2=nn.Linear(128,10)
+        self.moes=nn.Sequential(
+            MoeFcTokensParallelConvolution(27,32,60,5,useAttention=False),
+            MoeFcTokensParallelConvolution(32,32,60,5,useAttention=False),
+            MoeFcTokensParallelConvolution(32,32,60,5,useAttention=False),
+            MoeFcTokensParallelConvolution(32,32,60,5,useAttention=False),
+            MoeFcTokensParallelConvolution(32,32,60,5,useAttention=False),
+            MoeFcTokensParallelConvolution(32,32,60,5,useAttention=False),
+        )
+        self.fc1=nn.Linear(32*60,100)
+        self.fc2=nn.Linear(100,100)
+        self.fc3=nn.Linear(100,10)
 
     
     def forward(self, x):
-        x=x.view(x.shape[0],x.shape[1],-1)
-        x=self.moe1(x)
-        x=nn.Sigmoid()(x)
-        x=self.fc1(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
+        x=self.moes(x)
+        x=self.fc1(x.reshape(x.shape[0],-1))
         x=nn.ReLU()(x)
-
-        x=self.moe2(x)
+        x=self.fc2(x)
         x=nn.ReLU()(x)
-        x=self.fc2(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
-        x=nn.ReLU()(x)
-
-        x=self.moe3(x)
-        x=nn.Sigmoid()(x)
-        x=self.fc3(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
-        x=nn.ReLU()(x)
-
-        # x=self.moe4(x)
-        # x=nn.Sigmoid()(x)
-        # x=self.fc4(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
-        # x=nn.ReLU()(x)
-
-        # x=self.moe5(x)
-        # x=nn.Sigmoid()(x)
-        # x=self.fc5(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
-        # x=nn.ReLU()(x)
-
-        # x=self.moe6(x)
-        # x=nn.Sigmoid()(x)
-        # x=self.fc6(x.view(x.shape[0],-1)).view(x.shape[0],-1,128)
-        # x=nn.ReLU()(x)
-
-        x=self.lastLayer(x.view(x.shape[0],-1))
-        x=self.lastLayer2(x)
-
+        x=self.fc3(x)
         return x
 
 class MoeConvolution(nn.Module):
@@ -1249,3 +1214,80 @@ class MoeWide(nn.Module):
 
         return x
 
+
+class MoeRlParallel(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k,useAttention=False,dropout=0.):
+        super(MoeRlParallel, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=1
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
+
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateProbabilities=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+            #compute the probability of each expert
+            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+            # gateProbabilities=gateLogits
+
+        g=torch.transpose(gateProbabilities,1,2)
+        topKindices=torch.multinomial(g.reshape(-1,x.shape[1]),self.k,replacement=False).reshape(x.shape[0],self.nOfExperts,self.k)
+        topKindices=torch.transpose(topKindices,1,2)
+
+        ind=torch.ones(x.shape[0],self.k,self.nOfExperts).to(device).nonzero()
+        self.rlLoss=-torch.log(gateProbabilities[ind[:,0],topKindices.reshape(-1),ind[:,2]]).sum()
+        #get the topk
+        # topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+
+        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        
+        if self.first:
+            self.first=False
+            # self.resetParameters()
+            i=torch.ones(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1]).nonzero()
+            self.ones=torch.ones([topKindices.shape[2],topKindices.shape[0]*topKindices.shape[1],1]).to(device)
+            self.a=i[:,0].to(device)
+            self.b=i[:,1].to(device)
+            self.c=i[:,2].to(device)
+            self.final=torch.ones_like(topKindices.reshape(topKindices.shape[0],-1)).nonzero()[:,1].to(device)
+        top=topKindices.permute([2,0,1]).reshape(-1)
+        inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
+
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        
+        out=out.permute([1,0,2])
+
+        # out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
+        out=out.reshape(x.shape[0],-1,self.outputDimension)
+        # out=out.sum(dim=2)
+        
+
+        outputs[self.b,top]+=out[self.b,self.final]#.reshape(x.shape[0],-1,self.outputDimension)
+
+
+        return outputs
