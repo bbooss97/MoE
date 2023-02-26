@@ -27,7 +27,7 @@ class PreNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout = 0.):
+    def __init__(self, dim, hidden_dim, dropout = 0.,index=0):
         super().__init__()
         # self.net = nn.Sequential(
         #     nn.Linear(dim, hidden_dim),
@@ -44,7 +44,16 @@ class FeedForward(nn.Module):
         #     MoeFcTokensParallel(hidden_dim, dim, 101, 1, useAttention=False),
         #     nn.Dropout(dropout)
         # )
-        self.net = MoeRlParallel(dim,hidden_dim, dim, 64, 1, useAttention=False,dropout=dropout)
+        if index%2==0:
+            self.net = MoeRlParallel(dim,hidden_dim, dim, 32, 1, useAttention=False,dropout=dropout)
+        else:
+            self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout)
+            )
     def forward(self, x):
         x=self.net(x)
         # x=nn.Dropout(0.5)(x)
@@ -86,10 +95,10 @@ class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
         super().__init__()
         self.layers = nn.ModuleList([])
-        for _ in range(depth):
+        for i in range(depth):
             self.layers.append(nn.ModuleList([
                 PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
-                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
+                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout,index=i))
             ]))
     def forward(self, x):
         for attn, ff in self.layers:

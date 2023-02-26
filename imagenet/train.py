@@ -78,7 +78,7 @@ elif nn_type=="vit":
     model = ViT(
         image_size=w,
         patch_size=32,
-        depth=1,
+        depth=5,
         heads=8,
         dim=128,
         mlp_dim=128,
