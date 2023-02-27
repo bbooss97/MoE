@@ -8,6 +8,7 @@ from nn import MoeFcTokens
 from nn import MoeFcTokensParallel
 from nn import MoeFcTokensParallelConvolution
 from nn import MoeRlParallel
+from nn import SelfAttention
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device=torch.device("cpu")
@@ -45,7 +46,7 @@ class FeedForward(nn.Module):
         #     nn.Dropout(dropout)
         # )
         if index%2==0:
-            self.net = MoeRlParallel(dim,hidden_dim, dim, 32, 1, useAttention=False,dropout=dropout)
+            self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
         else:
             self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),

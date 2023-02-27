@@ -160,13 +160,6 @@ class MoeFcTokensParallel(nn.Module):
         self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
         self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
 
-        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
-        # self.bias2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
-
-        # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension,self.outputDimension)),requires_grad=True).to(device)
-        # self.bias3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,1)),requires_grad=True).to(device)
-
-
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
             #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -177,12 +170,13 @@ class MoeFcTokensParallel(nn.Module):
         self.counter+=1
         #compute the logits of the gate
         if self.useAttention:
-            gateProbabilities=self.selfAttention(x)
+            gateLogits=self.selfAttention(x)
         else:
             gateLogits=self.gate(x)
-            #compute the probability of each expert
-            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
-            # gateProbabilities=gateLogits
+        
+        #compute the probability of each expert
+        gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+        # gateProbabilities=gateLogits
 
         #get the topk
         topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
