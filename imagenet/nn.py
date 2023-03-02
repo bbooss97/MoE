@@ -1241,8 +1241,8 @@ class MoeRlParallel(nn.Module):
         else:
             gateLogits=self.gate(x)
             #compute the probability of each expert
-            gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
-            # gateProbabilities=gateLogits
+        gateProbabilities=nn.Softmax(dim=-2)(gateLogits)
+        # gateProbabilities=gateLogits
 
         g=torch.transpose(gateProbabilities,1,2)
         topKindices=torch.multinomial(g.reshape(-1,x.shape[1]),self.k,replacement=False).reshape(x.shape[0],self.nOfExperts,self.k)
@@ -1275,6 +1275,89 @@ class MoeRlParallel(nn.Module):
         out = torch.bmm(out,self.weight2)
         
         out=out.permute([1,0,2])
+
+        # out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
+        out=out.reshape(x.shape[0],-1,self.outputDimension)
+        # out=out.sum(dim=2)
+        
+
+        outputs[self.b,top]+=out[self.b,self.final]#.reshape(x.shape[0],-1,self.outputDimension)
+
+
+        return outputs
+    
+
+class MoeFcTokensCentroidsParallel(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k,useAttention=False,dropout=0.,centroids=5):
+        super(MoeFcTokensCentroidsParallel, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.k=k
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=1
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        self.centroids=centroids
+        
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts*self.centroids)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts*self.centroids)
+
+    def forward(self, x):
+        self.counter+=1
+        #compute the logits of the gate
+        if self.useAttention:
+            gateLogits=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+        
+        gateLogits=gateLogits.reshape(x.shape[0],x.shape[1],self.nOfExperts,self.centroids)
+        #compute the probability of each expert
+        gateProbabilities=nn.Softmax(dim=1)(gateLogits)
+
+        gateProbabilities=gateProbabilities.max(dim=-1).values
+        # gateProbabilities=gateLogits
+
+        #get the topk
+        topKvalues, topKindices=torch.topk(gateProbabilities,self.k,dim=-2)
+
+        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension).to(device)
+        
+        if self.first:
+            self.first=False
+            # self.resetParameters()
+            i=torch.ones(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1]).nonzero()
+            self.ones=torch.ones([topKindices.shape[2],topKindices.shape[0]*topKindices.shape[1],1]).to(device)
+            self.a=i[:,0].to(device)
+            self.b=i[:,1].to(device)
+            self.c=i[:,2].to(device)
+            self.final=torch.ones_like(topKindices.reshape(topKindices.shape[0],-1)).nonzero()[:,1].to(device)
+        top=topKindices.permute([2,0,1]).reshape(-1)
+        inp=x[self.b,top].reshape(topKindices.shape[2],-1,self.inputDimension)
+
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        
+        #multiply by the probabilities 
+        topKvalues=topKvalues.permute([2,0,1]).reshape(topKvalues.shape[2],-1)[:,:,None]
+
+        out=out*topKvalues
+
+        out=out.reshape(topKindices.shape[2],topKindices.shape[0],topKindices.shape[1],self.outputDimension)
+
+        out=out.permute([1,0,2,3])
 
         # out=out.reshape(x.shape[0],-1,self.k,self.outputDimension)
         out=out.reshape(x.shape[0],-1,self.outputDimension)
