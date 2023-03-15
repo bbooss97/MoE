@@ -14,34 +14,34 @@ from vit_pytorch.vit import ViT
 # from vit_pytorch.vit_for_small_dataset import ViT
 import torchvision.transforms as transforms
 
-w,h=320,320
+w,h=32,32
 #declare parameters
 augment=True
 num_epochs=20000
-batch_size=10
+batch_size=32
 nOfPatches=10
 w_and_b=False 
 nn_type="vit"
 
-rl=True
+rl=False
 
 
 #read the dataset
-datasetTraining=ImagenDataset(w,h,False,augment=augment)
-datasetTest=ImagenDataset(w,h,True,augment=False)
+# datasetTraining=ImagenDataset(w,h,False,augment=augment)
+# datasetTest=ImagenDataset(w,h,True,augment=False)
 
-# datasetTraining=torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.Compose([
-#     transforms.RandomCrop(32, padding=4),
-#     transforms.Resize(w),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.ToTensor(),
-#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-# ]))
-# datasetTest=torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transforms.Compose([
-#     transforms.Resize(w),
-#     transforms.ToTensor(),
-#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-# ]))
+datasetTraining=torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.Resize(w),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+]))
+datasetTest=torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transforms.Compose([
+    transforms.Resize(w),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+]))
 
 #device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -77,8 +77,8 @@ elif nn_type=="resnetPretrainedFineTuneFc":
 elif nn_type=="vit":
     model = ViT(
         image_size=w,
-        patch_size=32,
-        depth=5,
+        patch_size=4,
+        depth=4,
         heads=8,
         dim=128,
         mlp_dim=128,
@@ -182,8 +182,12 @@ for epoch in range(num_epochs):
         
         #calculate the loss
         l=loss(outputs,labels)
-        if nn_type=="moeRl" and rl:
-            l=l+(model.moefc.rlLoss*l)
+        if nn_type=="vit" and rl:
+            rLoss=torch.zeros(1).to(device)
+            for ind,layer in enumerate(model.transformer.layers):
+                if ind % 1 == 0:
+                    rLoss+=layer[1].fn.net.rlLoss
+            l+=rLoss.item()
             
             
         #backpropagation

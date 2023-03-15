@@ -9,6 +9,13 @@ from nn import MoeFcTokensParallel
 from nn import MoeFcTokensParallelConvolution
 from nn import MoeRlParallel
 from nn import SelfAttention
+from nn import MoeFcTokensCentroidsParallel
+from nn import MoeFcTokensCentroidsParallelNoGate
+from nn import MoeFcTokensConnection
+from nn import MoeFcTokensParallelGate
+from nn import MoeFcTokensParallelP
+from nn import MoeFcTokensParallelVit
+from nn import MoeFcTokensParallelScatter
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device=torch.device("cpu")
@@ -30,23 +37,10 @@ class PreNorm(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.,index=0):
         super().__init__()
-        # self.net = nn.Sequential(
-        #     nn.Linear(dim, hidden_dim),
-        #     nn.GELU(),
-        #     nn.Dropout(dropout),
-        #     nn.Linear(hidden_dim, dim),
-        #     nn.Dropout(dropout)
-        # )
-        # self.net= nn.Sequential(
-        #     MoeFcTokensParallel(dim, hidden_dim, 101, 1, useAttention=False),
-        #     # nn.Linear(dim, hidden_dim),
-        #     nn.GELU(),
-        #     nn.Dropout(dropout),
-        #     MoeFcTokensParallel(hidden_dim, dim, 101, 1, useAttention=False),
-        #     nn.Dropout(dropout)
-        # )
-        if index%2==0:
-            self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
+        if index%1==0:
+            # self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
+            # self.net=MoeFcTokensParallelVit(dim, hidden_dim, dim, 65, 1,useAttention=False,dropout=dropout)
+            self.net=MoeFcTokensParallelScatter(dim, hidden_dim, dim, 256, 2,useAttention=False,dropout=dropout)
         else:
             self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),
