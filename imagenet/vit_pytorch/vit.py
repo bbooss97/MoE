@@ -16,6 +16,9 @@ from nn import MoeFcTokensParallelGate
 from nn import MoeFcTokensParallelP
 from nn import MoeFcTokensParallelVit
 from nn import MoeFcTokensParallelScatter
+from nn import MoeFcTokensParallelScatterMux
+from nn import MoeFcTokensParallelScatterMuxConvolution
+from nn import MoeFcTokensParallelScatterEntireMux
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device=torch.device("cpu")
@@ -40,7 +43,8 @@ class FeedForward(nn.Module):
         if index%1==0:
             # self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
             # self.net=MoeFcTokensParallelVit(dim, hidden_dim, dim, 65, 1,useAttention=False,dropout=dropout)
-            self.net=MoeFcTokensParallelScatter(dim, hidden_dim, dim, 256, 2,useAttention=False,dropout=dropout)
+            # self.net=MoeFcTokensParallelScatterMuxConvolution(dim, hidden_dim, dim, 65, 8,useAttention=False,dropout=dropout)
+            self.net=MoeFcTokensParallelScatterEntireMux(dim, hidden_dim, dim, 512,useAttention=False,dropout=dropout)
         else:
             self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),
