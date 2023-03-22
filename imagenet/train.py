@@ -18,9 +18,9 @@ w,h=32,32
 #declare parameters
 augment=True
 num_epochs=20000
-batch_size=32
+batch_size=64
 nOfPatches=10
-w_and_b=False 
+w_and_b=True
 nn_type="vit"
 
 rl=False
@@ -82,8 +82,8 @@ elif nn_type=="vit":
         heads=8,
         dim=128,
         mlp_dim=128,
-        dropout=0.1,
-        emb_dropout=0.1,
+        dropout=0.0,
+        emb_dropout=0.0,
         num_classes=10
     )
 elif nn_type=="moeTransformerFc":
@@ -92,7 +92,7 @@ elif nn_type=="moeStack":
     model=moeStack()
 elif nn_type=="mixerMoe":
     model = MLPMixer(in_channels=3, image_size=w, patch_size=4, num_classes=10,
-                     dim=128, depth=6, token_dim=128, channel_dim=128)
+                     dim=128, depth=4, token_dim=128, channel_dim=128)
 elif nn_type=="moeConvolution":
     model=MoeConvolution(w,h,5,128,nOfPatches,useTokenBasedApproach=True,useAttention=False)
 elif nn_type=="moeCombination":
@@ -115,7 +115,7 @@ model=model.to(device)
 
 #define loss and the optimizer
 loss=nn.CrossEntropyLoss()
-optimizer=torch.optim.Adam(model.parameters(),lr=0.0001)
+optimizer=torch.optim.Adam(model.parameters(),lr=0.001)
 
 
 for epoch in range(num_epochs):

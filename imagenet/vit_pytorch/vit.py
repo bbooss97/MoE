@@ -18,7 +18,17 @@ from nn import MoeFcTokensParallelVit
 from nn import MoeFcTokensParallelScatter
 from nn import MoeFcTokensParallelScatterMux
 from nn import MoeFcTokensParallelScatterMuxConvolution
-from nn import MoeFcTokensParallelScatterEntireMux
+
+from nn import MoeFcTokensParallelScatterEntireMuxLikeSparsely
+from nn import MoeFcTokensParallelScatterEntireMultiples
+from nn import MoeFcTokensParallelScatterAttention
+from nn import MoeFcTokensParallelScatterEntireMuxSingle
+from nn import MoeMuxExpertChoiceAllTokens
+
+#use the sparsely gated mixture of experts
+from mixture_of_experts import MoE
+
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device=torch.device("cpu")
@@ -40,22 +50,22 @@ class PreNorm(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.,index=0):
         super().__init__()
-        if index%1==0:
-            # self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
-            # self.net=MoeFcTokensParallelVit(dim, hidden_dim, dim, 65, 1,useAttention=False,dropout=dropout)
-            # self.net=MoeFcTokensParallelScatterMuxConvolution(dim, hidden_dim, dim, 65, 8,useAttention=False,dropout=dropout)
-            self.net=MoeFcTokensParallelScatterEntireMux(dim, hidden_dim, dim, 512,useAttention=False,dropout=dropout)
-        else:
-            self.net = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
-            )
+        # if index%1==0:
+        #     # self.net = MoeFcTokensParallel(dim, hidden_dim, dim, 64, 1,useAttention=True,dropout=dropout)
+        #     # self.net=MoeFcTokensParallelScatterMux(dim, hidden_dim, dim, 16,4,useAttention=False,dropout=dropout)
+        #     # self.net=MoeFcTokensParallelScatterMuxConvolution(dim, hidden_dim, dim, 65, 8,useAttention=False,dropout=dropout)
+        #     # self.net=MoeFcTokensParallelScatterEntireMux(dim, hidden_dim, dim, 64,useAttention=False,dropout=dropout)
+        #     self.net=MoeMuxExpertChoiceAllTokens(dim, hidden_dim, dim, 16,useAttention=False,dropout=dropout)
+        # else:
+        self.net = nn.Sequential(
+        nn.Linear(dim, hidden_dim),
+        nn.GELU(),
+        nn.Dropout(dropout),
+        nn.Linear(hidden_dim, dim),
+        nn.Dropout(dropout)
+        )
     def forward(self, x):
         x=self.net(x)
-        # x=nn.Dropout(0.5)(x)
         return x
 
 class Attention(nn.Module):

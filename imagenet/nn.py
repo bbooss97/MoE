@@ -1677,8 +1677,10 @@ class MoeFcTokensParallelScatter(nn.Module):
         self.first=True
         self.dropout=dropout
         
-        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
-        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension),requires_grad=True).to(device)
+        torch.nn.init.xavier_uniform_(self.weight1)
+        torch.nn.init.xavier_uniform_(self.weight2)
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -1839,8 +1841,10 @@ class MoeFcTokensParallelScatterMux(nn.Module):
         self.first=True
         self.dropout=dropout
         
-        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
-        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension),requires_grad=True).to(device)
+        torch.nn.init.xavier_uniform_(self.weight1)
+        torch.nn.init.xavier_uniform_(self.weight2)
 
         if self.useAttention:
             self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
@@ -1992,9 +1996,84 @@ class MoeFcTokensParallelScatterMuxConvolution(nn.Module):
         return out
 
 
-class MoeFcTokensParallelScatterEntireMux(nn.Module):
+class MoeMuxExpertChoiceAllTokens(nn.Module):
     def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,useAttention=False,dropout=0.):
-        super(MoeFcTokensParallelScatterEntireMux, self).__init__()
+        super(MoeMuxExpertChoiceAllTokens, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=3
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        
+        #initialize the weights of the experts
+        self.weight1 = torch.nn.Parameter(torch.empty([self.nOfExperts,self.inputDimension+1,self.hiddenDimension]),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.empty([self.nOfExperts,self.hiddenDimension+1,self.outputDimension]),requires_grad=True).to(device)
+        torch.nn.init.kaiming_uniform_(self.weight1, a=5**0.5)
+        torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
+        
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+
+    def forward(self, x):
+        self.counter+=1
+        #if its the first time i enter the forward i initialize the ones tensor
+        if self.first:
+            self.first=False
+            self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
+
+        #compute the logits of the gate
+        if self.useAttention:
+            gateLogits=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+        
+        #loss to encourage the gate to be sparse not used in this case 
+        self.rlLoss=-torch.einsum('bt,bt->bt',self.gate.weight,self.gate.weight).mean()*10
+
+        #x has shape batchsize x tokens x inputDimension
+
+        #compute the probability of each expert
+        gateProbabilitiesTokens=nn.Softmax(dim=-2)(gateLogits)
+        gateProbabilitiesExperts=nn.Softmax(dim=-1)(gateLogits)
+
+        #gate probabilities have shape batchsize x tokens x experts
+        
+        inp=torch.einsum('btk,bta->bak',x,gateProbabilitiesTokens)
+        #inp has shape batchsize x experts x inputDimension
+
+        inp=inp.permute([1,0,2])
+        #inp has shape experts x batchsize x inputDimension
+        
+        #pass them to the experts
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        #out has shape experts x batchsize x outputDimension
+        
+        out=out.permute([1,0,2])
+        #out has shape batchsize x experts x outputDimension
+
+        #multiply by the probabilities
+        # out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
+        # out=out.sum(dim=2)
+        out=torch.einsum('btk,bat->bak',out,gateProbabilitiesExperts)
+        #out has shape batchsize x tokens x outputDimension
+        return out
+
+
+class MoeFcTokensParallelScatterEntireMuxLikeSparsely(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,useAttention=False,dropout=0.):
+        super(MoeFcTokensParallelScatterEntireMuxLikeSparsely, self).__init__()
         self.inputDimension=inputDimension
         self.outputDimension=outputDimension
         self.nOfExperts=nOfExperts
@@ -2007,8 +2086,219 @@ class MoeFcTokensParallelScatterEntireMux(nn.Module):
         #to remove
         self.k=1
         
-        # self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.hiddenDimension)),requires_grad=True).to(device)
-        # self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.hiddenDimension+1,self.outputDimension)),requires_grad=True).to(device)
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.inputDimension+1,self.hiddenDimension])),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.hiddenDimension+1,self.outputDimension])),requires_grad=True).to(device)
+        # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+            torch.nn.init.zeros_(self.gate.weight)
+
+    def forward(self, x):
+        self.counter+=1
+        if self.first:
+            self.first=False
+            self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
+
+        #compute the logits of the gate
+        if self.useAttention:
+            gateLogits=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+        
+        #compute the probability of each expert
+        # gateProbabilitiesTokens=nn.Softmax(dim=-2)(gateLogits)
+        # gateProbabilitiesExperts=nn.Softmax(dim=-1)(gateLogits)
+        
+        #multiply input by the probabilities 
+        # inp=torch.einsum('btk,bta->btak',x,gateProbabilitiesTokens)
+        # inp=inp.sum(dim=1)
+        inp=torch.einsum('btk,bta->bak',x,gateLogits)
+        inp=inp.permute([1,0,2])
+        
+        #pass them to the experts
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        # out=torch.bmm(inp,self.weight3)
+        out=nn.ReLU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        
+        out=out.permute([1,0,2])
+        #multiply by the probabilities
+        # out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
+        # out=out.sum(dim=2)
+        out=torch.einsum('btk,bat->bak',out,gateLogits)
+
+        # out=nn.Softmax(dim=1)(out)
+
+        return out
+
+
+
+
+class MoeFcTokensParallelScatterEntireMultiples(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,useAttention=False,dropout=0.,centroids=10):
+        super(MoeFcTokensParallelScatterEntireMultiples, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=3
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        self.centroids=centroids
+        #to remove
+        self.k=1
+        
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.inputDimension+1,self.hiddenDimension])),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.hiddenDimension+1,self.outputDimension])),requires_grad=True).to(device)
+        # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts*self.centroids)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts*self.centroids)
+
+    def forward(self, x):
+        self.counter+=1
+        if self.first:
+            self.first=False
+            self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
+
+        #compute the logits of the gate
+        if self.useAttention:
+            gateLogits=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+        
+        gateLogits=gateLogits.view([x.shape[0],x.shape[1],self.nOfExperts,self.centroids])
+        
+        #compute the probability of each expert
+        gateProbabilitiesTokens=nn.Softmax(dim=-1)(gateLogits.sum(dim=-1))
+        gateProbabilitiesExperts=nn.Softmax(dim=2)(gateLogits.sum(dim=-1))
+        
+        #multiply input by the probabilities 
+        # inp=torch.einsum('btk,bta->btak',x,gateProbabilitiesTokens)
+        # inp=inp.sum(dim=1)
+        inp=torch.einsum('btk,bta->bak',x,gateProbabilitiesTokens)
+        inp=inp.permute([1,0,2])
+        
+        #pass them to the experts
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        # out=torch.bmm(inp,self.weight3)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        
+        out=out.permute([1,0,2])
+        #multiply by the probabilities
+        # out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
+        # out=out.sum(dim=2)
+
+        out=torch.einsum('btk,bat->bak',out,gateProbabilitiesExperts)
+
+        return out
+
+
+
+
+
+
+class MoeFcTokensParallelScatterAttention(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,useAttention=False,dropout=0.,centroids=4):
+        super(MoeFcTokensParallelScatterAttention, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=3
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        self.centroids=centroids    
+        
+        self.weight1 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.inputDimension*centroids+1,self.hiddenDimension*centroids])),requires_grad=True).to(device)
+        self.weight2 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty([self.nOfExperts,self.hiddenDimension*centroids+1,self.outputDimension])),requires_grad=True).to(device)
+        # self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
+
+        if self.useAttention:
+            self.selfAttention=SelfAttention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts*self.centroids)
+            #self.selfAttention=Attention(self.inputDimension,self.hiddenAttentionDimension,self.nOfExperts)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts*self.centroids)
+
+    def forward(self, x):
+        self.counter+=1
+        if self.first:
+            self.first=False
+            self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
+
+        #compute the logits of the gate
+        if self.useAttention:
+            gateLogits=self.selfAttention(x)
+        else:
+            gateLogits=self.gate(x)
+        
+        gateLogits=gateLogits.view([x.shape[0],x.shape[1],self.nOfExperts,self.centroids])
+        
+        #compute the probability of each expert
+        gateProbabilitiesTokens=nn.Softmax(dim=-1)(gateLogits)
+        gateProbabilitiesExperts=nn.Softmax(dim=2)(gateLogits)
+        
+        #multiply input by the probabilities 
+        # inp=torch.einsum('btk,bta->btak',x,gateProbabilitiesTokens)
+        # inp=inp.sum(dim=1)
+        inp=torch.einsum('btk,btal->bakl',x,gateLogits)
+        inp=inp.permute([1,0,2,3]).reshape(self.nOfExperts,x.shape[0],-1)
+        
+        #pass them to the experts
+        inp=torch.cat((inp,self.ones),dim=-1)
+        out = torch.bmm(inp,self.weight1)
+        # out=torch.bmm(inp,self.weight3)
+        out=nn.GELU()(out)
+        out=nn.Dropout(self.dropout)(out)
+        out=torch.cat((out,self.ones),dim=-1)
+        out = torch.bmm(out,self.weight2)
+        
+        out=out.permute([1,0,2])
+        #multiply by the probabilities
+        # out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
+        # out=out.sum(dim=2)
+
+        out=torch.einsum('btk,bat->bak',out,gateLogits.sum(dim=-1))
+
+        return out
+
+
+
+class MoeFcTokensParallelScatterEntireMuxSingle(nn.Module):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,useAttention=False,dropout=0.):
+        super(MoeFcTokensParallelScatterEntireMuxSingle, self).__init__()
+        self.inputDimension=inputDimension
+        self.outputDimension=outputDimension
+        self.nOfExperts=nOfExperts
+        self.counter=0
+        self.useAttention=useAttention
+        self.hiddenAttentionDimension=3
+        self.hiddenDimension=hiddenDimension
+        self.first=True
+        self.dropout=dropout
+        #to remove
+        self.k=1
+        
+        # self.weight1 = torch.nn.Parameter(torch.nn.init.uniform_(torch.empty([self.nOfExperts,self.inputDimension+1,self.hiddenDimension])),requires_grad=True).to(device)
+        # self.weight2 = torch.nn.Parameter(torch.nn.init.uniform_(torch.empty([self.nOfExperts,self.hiddenDimension+1,self.outputDimension])),requires_grad=True).to(device)
         self.weight3 = torch.nn.Parameter(torch.nn.init.xavier_uniform_(torch.empty(self.nOfExperts,self.inputDimension+1,self.outputDimension)),requires_grad=True).to(device)
 
         if self.useAttention:
@@ -2032,16 +2322,22 @@ class MoeFcTokensParallelScatterEntireMux(nn.Module):
         #compute the probability of each expert
         gateProbabilitiesTokens=nn.Softmax(dim=-2)(gateLogits)
         gateProbabilitiesExperts=nn.Softmax(dim=-1)(gateLogits)
+
         
         #multiply input by the probabilities 
-        inp=torch.einsum('btk,bta->btak',x,gateProbabilitiesTokens)
-        inp=inp.sum(dim=1)
+        # inp=torch.einsum('btk,bta->btak',x,gateProbabilitiesTokens)
+        # inp=inp.sum(dim=1)
+        inp=torch.einsum('btk,bta->bak',x,gateProbabilitiesTokens)
+
+        self.rlLoss=-torch.einsum('bt,bt->bt',self.gate.weight,self.gate.weight).mean()*100
+
         inp=inp.permute([1,0,2])
+
         
         #pass them to the experts
         inp=torch.cat((inp,self.ones),dim=-1)
-        # out = torch.bmm(inp,self.weight1)
-        out=torch.bmm(inp,self.weight3)
+        out = torch.bmm(inp,self.weight3)
+        # out=torch.bmm(inp,self.weight3)
         out=nn.GELU()(out)
         # out=nn.Dropout(self.dropout)(out)
         # out=torch.cat((out,self.ones),dim=-1)
@@ -2049,10 +2345,12 @@ class MoeFcTokensParallelScatterEntireMux(nn.Module):
         
         out=out.permute([1,0,2])
         #multiply by the probabilities
-        out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
-        out=out.sum(dim=2)
+        # out=torch.einsum('btk,bat-> batk',out,gateProbabilitiesExperts)
+        # out=out.sum(dim=2)
+        out=torch.einsum('btk,bat->bak',out,gateProbabilitiesExperts)
 
         return out
+
 
 
 
