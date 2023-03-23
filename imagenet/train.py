@@ -13,6 +13,7 @@ from mlpMixer import MLPMixer
 from vit_pytorch.vit import ViT
 # from vit_pytorch.vit_for_small_dataset import ViT
 import torchvision.transforms as transforms
+from torchsummary import summary
 
 w,h=32,32
 #declare parameters
@@ -112,6 +113,7 @@ if w_and_b:
     wandb.watch(model)
 
 model=model.to(device)
+# summary(model,(3,32,32))
 
 #define loss and the optimizer
 loss=nn.CrossEntropyLoss()
