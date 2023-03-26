@@ -15,12 +15,12 @@ from torchsummary import summary
 
 #declare parameters
 num_epochs=20000
-batch_size=64
-w_and_b=False
+batch_size=256
+w_and_b=True
 nn_type="vit"
 
 #use additional loss from the transformer layers modified
-rl=False
+rl=True
 w,h=32,32
 
 #read the dataset cifar10 in this case
@@ -58,8 +58,8 @@ model = ViT(
     heads=8,
     dim=128,
     mlp_dim=128,
-    dropout=0.0,
-    emb_dropout=0.0,
+    dropout=0.1,
+    emb_dropout=0.1,
     num_classes=10
 )
     
@@ -98,7 +98,9 @@ for epoch in range(num_epochs):
             for ind,layer in enumerate(model.transformer.layers):
                 if ind % 1 == 0:
                     rLoss+=layer[1].fn.net.rlLoss
-            l+=rLoss.item()
+            rLoss=rLoss/len(model.transformer.layers)
+            #remove the comment to take into account the additional loss and not just log it
+            # l+=rLoss.item()
             
             
         #backpropagation
@@ -106,12 +108,14 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         l.backward()
         optimizer.step()
-
-        print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)),l.item()))
+        if rl:
+            print("epoch: {}/{}, step: {}/{}, loss: {}, rlLoss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)),l.item(),rLoss.item()))
+        else:
+            print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)),l.item()))
         
         if w_and_b:
             if i%20==0:
-                wandb.log({"loss_train":l.item()})
+                wandb.log({"loss_train":l.item(), "rlLoss_train":rLoss.item()})
 
     #test
     model.eval()
@@ -124,6 +128,7 @@ for epoch in range(num_epochs):
     f1 =0.0
     precision =0.0
     recall =0.0
+    rLoss=0.0
 
     # Initialize lists to store predictions and labels
     testOutputs=[]

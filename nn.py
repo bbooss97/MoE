@@ -52,10 +52,17 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
 
         #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
         #it can be used or not used in the training using rlLoss variable in the training 
-        norm=torch.norm(inp,dim=-1,keepdim=True)
-        norm_tensor=inp/norm
-        distance=torch.einsum('bak,btk->bat',norm_tensor,norm_tensor)
-        self.rlLoss=distance.mean()
+        #distance
+        # norm=torch.norm(inp,dim=-1,keepdim=True)
+        # norm_tensor=inp/norm
+        # distance=torch.einsum('bak,btk->bat',norm_tensor,norm_tensor)
+        # self.rlLoss=distance.mean()
+        averageInputs=inp.mean(dim=0)
+        #l2 distance
+        self.rlLoss=-torch.norm(averageInputs,dim=-1)
+        self.rlLoss=torch.einsum('b,a->ba',self.rlLoss,self.rlLoss)
+        self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
+
 
         inp=inp.permute([1,0,2])
         #inp has shape experts x batchsize x inputDimension
