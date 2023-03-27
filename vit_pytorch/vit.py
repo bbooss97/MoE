@@ -5,14 +5,13 @@ from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
 from nn import MoeMuxExpertChoiceAllTokens
+from nn import MoeMuxExpertChoiceKTokens
 
 #use the sparsely gated mixture of experts
 from mixture_of_experts import MoE
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-# helpers
 
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
@@ -30,12 +29,14 @@ class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.,index=0):
         super().__init__()
         i=1
-        #i add the moe layer every i transformers layers
+        #i add the moe layer every i transformers layers when i is 1 then every layer is has moe layer
         if index%i==0:
             #moe mux layer considering all the tokens
-            self.net=MoeMuxExpertChoiceAllTokens(dim, hidden_dim, dim, 16,dropout=dropout)
+            # self.net=MoeMuxExpertChoiceAllTokens(dim, hidden_dim, dim, 16,dropout=dropout)
+            #moe mux layer considering k tokens
+            self.net=MoeMuxExpertChoiceKTokens(dim, hidden_dim, dim, 16,k=8,dropout=dropout)
         else:
-            #default ff layer
+            #default ff layer if i dont add the moe
             self.net = nn.Sequential(
                 nn.Linear(dim, hidden_dim),
                 nn.GELU(),
