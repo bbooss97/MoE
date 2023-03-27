@@ -59,8 +59,9 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         # self.rlLoss=distance.mean()
         averageInputs=inp.mean(dim=0)
         #l2 distance
-        self.rlLoss=-torch.norm(averageInputs,dim=-1)
-        self.rlLoss=torch.einsum('b,a->ba',self.rlLoss,self.rlLoss)
+        self.norm=torch.norm(averageInputs,dim=-1)
+        self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
+        self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
         self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
 
 
@@ -148,8 +149,9 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         #distance
         averageInputs=inp.mean(dim=0)
         #l2 distance
-        self.rlLoss=-torch.norm(averageInputs,dim=-1)
-        self.rlLoss=torch.einsum('b,a->ba',self.rlLoss,self.rlLoss)
+        self.norm=torch.norm(averageInputs,dim=-1)
+        self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
+        self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
         self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
 
 
