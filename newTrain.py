@@ -19,21 +19,21 @@ print(device)
 
 #declare parameters
 sweep_configuration = {
-    'method': 'random',
+    'method': 'grid',
     'name': 'sweep',
     'metric': {
         'goal': 'minimize', 
         'name': 'loss'
         },
     'parameters': {
-        'batch_size': {'values': [16, 32, 64]},
-        'num_epochs': {'values': [1,2]},
-        'lr': {'max': 0.1, 'min': 0.0001},
-        'batch_size': {'values': [16, 32, 64]},
-        'dim': {'values': [128 ]},
-        'depth': {'values': [3, 6]},
-        'heads': {'values': [3, 6, 9]},
-        'mlp_dim': {'values': [3, 6, 9]},
+        'batch_size': {'values': [256]},
+        'num_epochs': {'values': [1]},
+        'lr': {"values": [0.001]},
+        'dim': {'values': [128]},
+        'depth': {'values': [4]},
+        'heads': {'values': [8]},
+        'mlp_dim': {'values': [128]},
+        'routing': {'values': ["expertChoice","muxAllTokens","muxKTokens","standard","tokenChoice"]}
     }
 }
 
@@ -61,6 +61,26 @@ def loadDatasetCifar100():
     
     return train_dataloader, test_dataloader
 
+def loadDatasetCifar10():
+    #define dataset
+    datasetTraining=torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.Compose([
+        transforms.RandAugment(num_ops=3, magnitude=5),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ]))
+    datasetTest=torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ]))
+
+    batch_size=wandb.config.batch_size
+
+    #define dataloader
+    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
+    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
+
+    return train_dataloader, test_dataloader
+
 #define the models and the optimizer
 def load():
     dim=wandb.config.dim
@@ -70,13 +90,14 @@ def load():
     lr=wandb.config.lr
 
     #load the teacher model
-    teacher = resnet50(pretrained = True)
+    teacher = resnet50(pretrained = True )
+    teacher.fc = nn.Linear(2048, 10)
 
     #load the student model
     v = DistillableViT(
         image_size = 32,
         patch_size = 4,
-        num_classes = 1000,
+        num_classes = 10,
         dim = dim,
         depth = depth,
         heads = heads,
@@ -198,12 +219,13 @@ def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
     wandb.log({"avg_loss_test":avg_loss,"accuracy_test":accuracy,"f1_test":f1,"precision_test":precision,"recall_test":recall})
 
     #save the model with the id from wandb
-    torch.save(model,"./"+ "vit" +".pt")
+    torch.save(v,"./"+ "vit" +".pt")
 
 #main function
 def run():
     wandb.init()
-    train_dataloader,test_dataloader =loadDatasetCifar100()
+    # train_dataloader,test_dataloader =loadDatasetCifar100()
+    train_dataloader,test_dataloader =loadDatasetCifar10()
     v, distiller, loss, optimizer =load()
 
     num_epochs=wandb.config.num_epochs
@@ -214,4 +236,4 @@ def run():
 
 
 # Start sweep jobs
-wandb.agent(sweep_id, function=run, count=4)
+wandb.agent(sweep_id, function=run)
