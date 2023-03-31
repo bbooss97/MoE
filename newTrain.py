@@ -1,0 +1,217 @@
+import torch
+from torch.utils.data import DataLoader
+from torch import nn
+import torchvision
+from torchvision.models import resnet50
+import wandb
+from nn import *
+from sklearn.metrics import f1_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import accuracy_score
+from vit_pytorch.distill import DistillableViT,DistillWrapper
+import torchvision.transforms as transforms
+
+#device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+
+
+#declare parameters
+sweep_configuration = {
+    'method': 'random',
+    'name': 'sweep',
+    'metric': {
+        'goal': 'minimize', 
+        'name': 'loss'
+        },
+    'parameters': {
+        'batch_size': {'values': [16, 32, 64]},
+        'num_epochs': {'values': [1,2]},
+        'lr': {'max': 0.1, 'min': 0.0001},
+        'batch_size': {'values': [16, 32, 64]},
+        'dim': {'values': [128 ]},
+        'depth': {'values': [3, 6]},
+        'heads': {'values': [3, 6, 9]},
+        'mlp_dim': {'values': [3, 6, 9]},
+    }
+}
+
+#initialize wandb
+sweep_id = wandb.sweep(sweep=sweep_configuration, project='my-first-sweep')
+
+#load the cifar100 dataset with 3 randaug
+def loadDatasetCifar100():
+    #define dataset
+    datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
+        transforms.RandAugment(num_ops=3, magnitude=5),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ]))
+    datasetTest=torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ]))
+
+    batch_size=wandb.config.batch_size
+
+    #define dataloader
+    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
+    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
+    
+    return train_dataloader, test_dataloader
+
+#define the models and the optimizer
+def load():
+    dim=wandb.config.dim
+    depth=wandb.config.depth
+    heads=wandb.config.heads
+    mlp_dim=wandb.config.mlp_dim
+    lr=wandb.config.lr
+
+    #load the teacher model
+    teacher = resnet50(pretrained = True)
+
+    #load the student model
+    v = DistillableViT(
+        image_size = 32,
+        patch_size = 4,
+        num_classes = 1000,
+        dim = dim,
+        depth = depth,
+        heads = heads,
+        mlp_dim = mlp_dim,
+        dropout = 0.1,
+        emb_dropout = 0.1
+    )
+
+    distiller = DistillWrapper(
+        student = v,
+        teacher = teacher,
+        temperature = 3,           # temperature of distillation
+        alpha = 0.5,               # trade between main loss and distillation loss
+        hard = False               # whether to use soft or hard distillation
+    )
+
+
+    #put models on the device
+    v=v.to(device)
+    distiller=distiller.to(device)
+    
+    #define loss and the optimizer
+    loss=nn.CrossEntropyLoss()
+    optimizer=torch.optim.Adam(v.parameters(),lr=lr)
+
+    return v, distiller, loss, optimizer
+
+def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer):
+    #train
+    v.train()
+    wandb.log({"epoch":epoch})
+
+    # #train loop
+    for i, (images, labels) in enumerate(train_dataloader):
+
+        #move the data to the device
+        images=images.to(device)
+        labels=labels.to(device)
+
+        #loss function
+        l=distiller(images,labels)
+            
+        #backpropagation
+        torch.cuda.empty_cache()
+        optimizer.zero_grad()
+        l.backward()
+        optimizer.step()
+
+        #log
+        if i%20==0:
+            print("epoch: {}/{}, step: {}/{}, loss: {}".format(epoch+1,num_epochs,i+1,int(len(train_dataloader)),l.item()))
+            wandb.log({"loss_train":l.item()})
+
+def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
+    #test
+    v.eval()
+
+    # Initialize variables to store metrics
+    l = 0.0
+    accuracy = 0.0
+    f1 =0.0
+    precision = 0.0
+    recall = 0.0
+
+    # Initialize lists to store predictions and labels
+    testOutputs=[]
+    testLabels=[]
+
+    # Loop over the data in the test set
+    with torch.no_grad():
+        for i,(images, labels) in enumerate(test_dataloader):
+
+            # Move the data to the device
+            images = images.to(device)
+            labels = labels.to(device)
+           
+            outputs=v(images)
+
+            # Store predictions and labels
+            testOutputs.append(outputs)
+            testLabels.append(labels)
+
+            ls = loss(outputs, labels)
+
+            # Compute running metrics
+            l += ls.item()
+        
+
+    # Concatenate predictions and labels
+    testOutputs = torch.cat(testOutputs, dim=0)
+    testLabels = torch.cat(testLabels, dim=0)
+
+    testLabels=testLabels.cpu()
+    testOutputs=testOutputs.cpu()
+
+    # Compute average loss
+    avg_loss = l / len(test_dataloader)
+
+    # Compute accuracy
+    accuracy = accuracy_score(testLabels, testOutputs.argmax(dim=1))
+
+    # Compute f1 score
+    f1 = f1_score(testLabels, testOutputs.argmax(dim=1), average='macro')
+
+    # Compute precision
+    precision = precision_score(testLabels, testOutputs.argmax(dim=1), average='macro')
+
+    # Compute recall
+    recall = recall_score(testLabels, testOutputs.argmax(dim=1), average='macro')
+
+    # Print the metrics
+    print(f'Test loss: {avg_loss:.4f}')
+    print(f'Test accuracy: {accuracy:.4f}')
+    print(f'Test f1: {f1:.4f}')
+    print(f'Test precision: {precision:.4f}')
+    print(f'Test recall: {recall:.4f}')
+
+    
+    wandb.log({"avg_loss_test":avg_loss,"accuracy_test":accuracy,"f1_test":f1,"precision_test":precision,"recall_test":recall})
+
+    #save the model with the id from wandb
+    torch.save(model,"./"+ "vit" +".pt")
+
+#main function
+def run():
+    wandb.init()
+    train_dataloader,test_dataloader =loadDatasetCifar100()
+    v, distiller, loss, optimizer =load()
+
+    num_epochs=wandb.config.num_epochs
+
+    for epoch in range(num_epochs):
+        trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer)
+        testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
+
+
+# Start sweep jobs
+wandb.agent(sweep_id, function=run, count=4)
