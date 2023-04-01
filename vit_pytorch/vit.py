@@ -32,7 +32,7 @@ class PreNorm(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.,index=0,routing="muxAllTokens",nOfExperts=8,k=2):
         super().__init__()
-        
+        self.routing=routing
         if routing=="standard":
             #default ff layer if i dont add the moe
             self.net = nn.Sequential(
@@ -53,7 +53,10 @@ class FeedForward(nn.Module):
 
 
     def forward(self, x):
-        x=self.net(x)
+        if self.routing=="tokenChoice":
+            x=self.net(x)[0]
+        else:
+            x=self.net(x)
         return x
 
 class Attention(nn.Module):
@@ -94,6 +97,9 @@ class Transformer(nn.Module):
         routing=wandb.config.routing
         nOfExperts=int(wandb.config.nOfExperts)
         k=int(wandb.config.k)
+        # routing="standard"
+        # nOfExperts=8
+        # k=1
         self.layers = nn.ModuleList([])
         for i in range(depth):
             self.layers.append(nn.ModuleList([
