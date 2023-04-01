@@ -6,12 +6,16 @@ from einops.layers.torch import Rearrange
 
 from nn import MoeMuxExpertChoiceAllTokens
 from nn import MoeMuxExpertChoiceKTokens
+from nn import MoeExpertChoice
+
+import wandb
 
 #use the sparsely gated mixture of experts
 from mixture_of_experts import MoE
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
@@ -26,16 +30,10 @@ class PreNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout = 0.,index=0):
+    def __init__(self, dim, hidden_dim, dropout = 0.,index=0,routing="muxAllTokens",nOfExperts=8,k=2):
         super().__init__()
-        i=1
-        #i add the moe layer every i transformers layers when i is 1 then every layer is has moe layer
-        if index%i==0:
-            #moe mux layer considering all the tokens
-            # self.net=MoeMuxExpertChoiceAllTokens(dim, hidden_dim, dim, 16,dropout=dropout)
-            #moe mux layer considering k tokens
-            self.net=MoeMuxExpertChoiceKTokens(dim, hidden_dim, dim, 16,k=8,dropout=dropout)
-        else:
+        
+        if routing=="standard":
             #default ff layer if i dont add the moe
             self.net = nn.Sequential(
                 nn.Linear(dim, hidden_dim),
@@ -44,6 +42,16 @@ class FeedForward(nn.Module):
                 nn.Linear(hidden_dim, dim),
                 nn.Dropout(dropout)
             )
+        elif routing=="muxAllTokens":
+            self.net=MoeMuxExpertChoiceAllTokens(dim,hidden_dim,dim,nOfExperts,dropout)
+        elif routing=="muxKTokens":
+            self.net=MoeMuxExpertChoiceKTokens(dim,hidden_dim,dim,nOfExperts,k,dropout)
+        elif routing=="expertChoice":
+            self.net=MoeExpertChoice(dim,hidden_dim,dim,nOfExperts,k,dropout)
+        elif routing=="tokenChoice":
+            self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
+
+
     def forward(self, x):
         x=self.net(x)
         return x
@@ -83,11 +91,14 @@ class Attention(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
         super().__init__()
+        routing=wandb.config.routing
+        nOfExperts=int(wandb.config.nOfExperts)
+        k=int(wandb.config.k)
         self.layers = nn.ModuleList([])
         for i in range(depth):
             self.layers.append(nn.ModuleList([
                 PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
-                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout,index=i))
+                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout,index=i,routing=routing,nOfExperts=nOfExperts,k=k))
             ]))
     def forward(self, x):
         for attn, ff in self.layers:

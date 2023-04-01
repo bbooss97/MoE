@@ -26,19 +26,22 @@ sweep_configuration = {
         'name': 'loss'
         },
     'parameters': {
-        'batch_size': {'values': [256]},
+        'batch_size': {'values': [512]},
         'num_epochs': {'values': [1]},
         'lr': {"values": [0.001]},
         'dim': {'values': [128]},
-        'depth': {'values': [4]},
+        'depth': {'values': [1]},
         'heads': {'values': [8]},
         'mlp_dim': {'values': [128]},
-        'routing': {'values': ["expertChoice","muxAllTokens","muxKTokens","standard","tokenChoice"]}
+        'routing': {'values': ["expertChoice","muxAllTokens","muxKTokens","standard","tokenChoice"]},
+        'nOfExperts': {'values': [8]},
+        'k': {'values': [1]}
     }
 }
 
 #initialize wandb
-sweep_id = wandb.sweep(sweep=sweep_configuration, project='my-first-sweep')
+sweep_id = wandb.sweep(sweep=sweep_configuration, project='moeSweep')
+
 
 #load the cifar100 dataset with 3 randaug
 def loadDatasetCifar100():
