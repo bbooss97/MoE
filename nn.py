@@ -5,7 +5,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
 #module to implement the prof idea considering for each expert all the tokens and passing to the fc their weighed sum
 class MoeMuxExpertChoiceAllTokens(nn.Module):
-    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,dropout=0.):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,dropout=0.,useSphere=False,reducedDimension=16):
         super(MoeMuxExpertChoiceAllTokens, self).__init__()
 
         self.inputDimension=inputDimension
@@ -14,6 +14,8 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         self.hiddenDimension=hiddenDimension
         self.first=True
         self.dropout=dropout
+        self.useSphere=useSphere
+        self.reducedDimension=reducedDimension
 
         self.counter=0
         
@@ -23,7 +25,11 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight1, a=5**0.5)
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
-        self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+        if self.useSphere:
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
+            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         self.counter+=1
@@ -34,7 +40,16 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
             self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
 
         #compute the logits of the gate
-        gateLogits=self.gate(x)
+        if self.useSphere:
+            #normalize parameters
+            reducedX=self.reduce(x)
+            reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
+            #normalize gate weights
+            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            #compute the logits
+            gateLogits=self.gate(reducedX)
+        else:
+            gateLogits=self.gate(x)
         
         #x has shape batchsize x tokens x inputDimension
 
@@ -93,7 +108,7 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
 
 #module to implement the prof idea considering for each expert the weighted sum of the tokens routed to it
 class MoeMuxExpertChoiceKTokens(nn.Module):
-    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k=8,dropout=0.):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k=8,dropout=0.,useSphere=False,reducedDimension=16):
         super(MoeMuxExpertChoiceKTokens, self).__init__()
 
         self.inputDimension=inputDimension
@@ -103,6 +118,8 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         self.first=True
         self.dropout=dropout
         self.k=k
+        self.useSphere=useSphere
+        self.reducedDimension=reducedDimension
 
         self.counter=0
         
@@ -112,7 +129,11 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight1, a=5**0.5)
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
-        self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+        if self.useSphere:
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
+            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         self.counter+=1
@@ -123,7 +144,16 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
             self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
 
         #compute the logits of the gate
-        gateLogits=self.gate(x)
+        if self.useSphere:
+            #normalize parameters
+            reducedX=self.reduce(x)
+            reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
+            #normalize gate weights
+            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            #compute the logits
+            gateLogits=self.gate(reducedX)
+        else:
+            gateLogits=self.gate(x)
         
         #x has shape batchsize x tokens x inputDimension
 
@@ -187,7 +217,7 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         return outputs
 
 class MoeExpertChoice(nn.Module):
-    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k=8,dropout=0.):
+    def __init__(self,inputDimension,hiddenDimension, outputDimension,nOfExperts,k=8,dropout=0.,useSphere=False,reducedDimension=16):
         super(MoeExpertChoice, self).__init__()
 
         self.inputDimension=inputDimension
@@ -197,6 +227,8 @@ class MoeExpertChoice(nn.Module):
         self.first=True
         self.dropout=dropout
         self.k=k
+        self.useSphere=useSphere
+        self.reducedDimension=reducedDimension
 
         self.counter=0
         
@@ -206,7 +238,11 @@ class MoeExpertChoice(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight1, a=5**0.5)
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
-        self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
+        if self.useSphere:
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
+            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+        else:
+            self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
     def forward(self, x):
         self.counter+=1
@@ -217,7 +253,16 @@ class MoeExpertChoice(nn.Module):
             self.ones=torch.ones([self.nOfExperts,x.shape[0]*self.k,1]).to(device)
 
         #compute the logits of the gate
-        gateLogits=self.gate(x)
+        if self.useSphere:
+            #normalize parameters
+            reducedX=self.reduce(x)
+            reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
+            #normalize gate weights
+            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            #compute the logits
+            gateLogits=self.gate(reducedX)
+        else:
+            gateLogits=self.gate(x)
         
         #x has shape batchsize x tokens x inputDimension
 
