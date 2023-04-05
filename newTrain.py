@@ -25,7 +25,7 @@ with open("sweep_config.yaml") as f:
 
 if sweep_id=="":
     #initialize wandb
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project='moeSweep')
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project='moeSweepsCifar10')
 
 
 #load the cifar100 dataset with 3 randaug
