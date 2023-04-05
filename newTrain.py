@@ -11,33 +11,39 @@ from sklearn.metrics import recall_score
 from sklearn.metrics import accuracy_score
 from vit_pytorch.distill import DistillableViT,DistillWrapper
 import torchvision.transforms as transforms
+import yaml
 
 #device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 
-#declare parameters
-sweep_configuration = {
-    'method': 'grid',
-    'name': 'sweep',
-    'metric': {
-        'goal': 'minimize', 
-        'name': 'loss'
-        },
-    'parameters': {
-        'batch_size': {'values': [512]},
-        'num_epochs': {'values': [1]},
-        'lr': {"values": [0.001]},
-        'dim': {'values': [128]},
-        'depth': {'values': [1]},
-        'heads': {'values': [8]},
-        'mlp_dim': {'values': [128]},
-        'routing': {'values': ["expertChoice","muxAllTokens","muxKTokens","standard","tokenChoice"]},
-        'nOfExperts': {'values': [8]},
-        'k': {'values': [1]}
-    }
-}
+# #declare parameters
+# sweep_configuration = {
+#     'method': 'grid',
+#     'name': 'sweep',
+#     'metric': {
+#         'goal': 'minimize', 
+#         'name': 'loss'
+#         },
+#     'parameters': {
+#         'batch_size': {'values': [256]},
+#         'num_epochs': {'values': [50]},
+#         'lr': {"values": [0.0001]},
+#         'dim': {'values': [128]},
+#         'depth': {'values': [4]},
+#         'heads': {'values': [8]},
+#         'mlp_dim': {'values': [128]},
+#         'routing': {'values': ["expertChoice","muxAllTokens","muxKTokens","standard","tokenChoice"]},
+#         'nOfExperts': {'values': [16]},
+#         'k': {'values': [3],'when': {'routing': 'muxKTokens'}},
+#         'useSphere': {'values': [True,False]}
+#     }
+# }
+
+# Load the YAML file as a dictionary
+with open("sweep_config.yaml") as f:
+  sweep_configuration = yaml.safe_load(f)
 
 #initialize wandb
 sweep_id = wandb.sweep(sweep=sweep_configuration, project='moeSweep')
