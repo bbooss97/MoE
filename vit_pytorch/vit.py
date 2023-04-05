@@ -49,7 +49,7 @@ class FeedForward(nn.Module):
                 raise Exception("A error occured!")
             self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
         elif routing=="muxAllTokens":
-            if k==-1 or nOfExperts==-1:
+            if k!=-1 or nOfExperts==-1:
                 raise Exception("A error occured!")
             self.net=MoeMuxExpertChoiceAllTokens(dim,hidden_dim,dim,nOfExperts,dropout,useSphere=useSphere)
         elif routing=="muxKTokens":
