@@ -70,7 +70,7 @@ def loadDatasetCifar10():
     return train_dataloader, test_dataloader
 
 #define the models and the optimizer
-def load():
+def load(num_classes=10):
     dim=wandb.config.dim
     depth=wandb.config.depth
     heads=wandb.config.heads
@@ -79,13 +79,14 @@ def load():
 
     #load the teacher model
     teacher = resnet50(pretrained = True )
-    teacher.fc = nn.Linear(2048, 10)
+    #modify here to change the number of classes
+    teacher.fc = nn.Linear(2048, num_classes)
 
     #load the student model
     v = DistillableViT(
         image_size = 32,
         patch_size = 4,
-        num_classes = 10,
+        num_classes = num_classes,
         dim = dim,
         depth = depth,
         heads = heads,
@@ -214,7 +215,7 @@ def run():
     wandb.init()
     # train_dataloader,test_dataloader =loadDatasetCifar100()
     train_dataloader,test_dataloader =loadDatasetCifar10()
-    v, distiller, loss, optimizer =load()
+    v, distiller, loss, optimizer =load(10)
 
     num_epochs=wandb.config.num_epochs
 
