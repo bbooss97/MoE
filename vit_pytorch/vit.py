@@ -35,7 +35,7 @@ class FeedForward(nn.Module):
         self.routing=routing
         if routing=="standard":
             if k!=-1 or nOfExperts!=-1 or useSphere!=False:
-                quit()
+                raise Exception("A error occured!")
             #default ff layer if i dont add the moe
             self.net = nn.Sequential(
                 nn.Linear(dim, hidden_dim),
@@ -45,20 +45,20 @@ class FeedForward(nn.Module):
                 nn.Dropout(dropout)
             )
         elif routing=="tokenChoice":
-            if useSphere!=False or k!=-1:
-                quit()
+            if useSphere!=False or k!=-1 or nOfExperts==-1:
+                raise Exception("A error occured!")
             self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
         elif routing=="muxAllTokens":
             if k==-1 or nOfExperts==-1:
-                quit()
+                raise Exception("A error occured!")
             self.net=MoeMuxExpertChoiceAllTokens(dim,hidden_dim,dim,nOfExperts,dropout,useSphere=useSphere)
         elif routing=="muxKTokens":
             if k==-1 or nOfExperts==-1:
-                quit()
+                raise Exception("A error occured!")
             self.net=MoeMuxExpertChoiceKTokens(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
         elif routing=="expertChoice":
             if k==-1 or nOfExperts==-1:
-                quit()
+                raise Exception("A error occured!")
             self.net=MoeExpertChoice(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
 
 
