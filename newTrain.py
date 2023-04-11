@@ -18,6 +18,8 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 sweep_id=""
+project_name="moeSweepsCifar10"
+entity_name="bbooss97"
 
 # Load the YAML file as a dictionary
 with open("sweep_config.yaml") as f:
@@ -25,7 +27,7 @@ with open("sweep_config.yaml") as f:
 
 if sweep_id=="":
     #initialize wandb
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project='moeSweepsCifar10')
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project=project_name,entity=entity_name)
 
 
 #load the cifar100 dataset with 3 randaug
@@ -212,7 +214,7 @@ def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
 
 #main function
 def run():
-    wandb.init()
+    wandb.init(id=sweep_id,project=project_name,entity=entity_name)
     # train_dataloader,test_dataloader =loadDatasetCifar100()
     train_dataloader,test_dataloader =loadDatasetCifar10()
     v, distiller, loss, optimizer =load(10)
@@ -225,4 +227,4 @@ def run():
 
 
 # Start sweep jobs
-wandb.agent(sweep_id, function=run)
+wandb.agent(sweep_id, function=run,entity=entity_name,project=project_name)
