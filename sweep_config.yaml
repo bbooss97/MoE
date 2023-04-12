@@ -2,14 +2,14 @@ method: grid
 name: sweep
 metric:
   goal: minimize
-  name: loss
+  name: avg_loss_test
 parameters:
   batch_size:
     values:
-      - 64
+      - 128
   num_epochs:
     values:
-      - 30
+      - 100
   lr:
     values:
       - 0.0001
@@ -38,16 +38,18 @@ parameters:
       - 16
       - 64
       - 128
-    # when: routing == expertChoice or routing == tokenChoice or routing == muxKTokens or routing == muxAllTokens
   k:
     values:
       - -1
       - 1
       - 2
       - 4
-    # when: routing == expertChoice or routing == muxKTokens or routing == muxAllTokens
   useSphere:
     values:
       - False
       - True
-    # when: routing == expertChoice or routing == muxKTokens or routing == muxAllTokens
+early_terminate:
+  type: hyperband
+  s: 2
+  eta: 3
+  max_iter: 27
