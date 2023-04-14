@@ -66,19 +66,15 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         inp=torch.einsum('btk,bta->bak',x,gateProbabilitiesTokens)
         #inp has shape batchsize x experts x inputDimension
 
-        #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
-        #it can be used or not used in the training using rlLoss variable in the training 
-        #distance
-        # norm=torch.norm(inp,dim=-1,keepdim=True)
-        # norm_tensor=inp/norm
-        # distance=torch.einsum('bak,btk->bat',norm_tensor,norm_tensor)
-        # self.rlLoss=distance.mean()
-        averageInputs=inp.mean(dim=0)
-        #l2 distance
-        self.norm=torch.norm(averageInputs,dim=-1)
-        self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
-        self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
-        self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
+        # #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
+        # #it can be used or not used in the training using rlLoss variable in the training 
+        # #distance
+        # averageInputs=inp.mean(dim=0)
+        # #l2 distance
+        # self.norm=torch.norm(averageInputs,dim=-1)
+        # self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
+        # self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
+        # self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
 
 
         inp=inp.permute([1,0,2])
@@ -176,15 +172,15 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         inp=torch.einsum('abcd,abc->acd',inp,topKvalues)
         #inp has shape batchsize x experts x inputDimension
 
-        #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
-        #it can be used or not used in the training using rlLoss variable in the training 
-        #distance
-        averageInputs=inp.mean(dim=0)
-        #l2 distance
-        self.norm=torch.norm(averageInputs,dim=-1)
-        self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
-        self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
-        self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
+        # #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
+        # #it can be used or not used in the training using rlLoss variable in the training 
+        # #distance
+        # averageInputs=inp.mean(dim=0)
+        # #l2 distance
+        # self.norm=torch.norm(averageInputs,dim=-1)
+        # self.rlLoss=averageInputs/self.norm.unsqueeze(-1)
+        # self.rlLoss=torch.einsum('ab,cb->ac',self.rlLoss,self.rlLoss)
+        # self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
 
 
         inp=inp.permute([1,0,2])
@@ -211,11 +207,10 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
 
         #recombine the outputs of the experts
         out=out.reshape(x.shape[0],-1,self.outputDimension)
-        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension)
-        outputs=outputs.to(device)
+        outputs=torch.zeros_like(x)
 
         #add the outputs of the experts to the token
-        outputs.scatter_add_(1,indexes,out)
+        outputs=torch.scatter_add(outputs, 1, indexes, out)
         return outputs
 
 class MoeExpertChoice(nn.Module):
@@ -299,7 +294,7 @@ class MoeExpertChoice(nn.Module):
         out=nn.Dropout(self.dropout)(out)
         out=torch.cat((out,self.ones),dim=-1)
         out = torch.bmm(out,self.weight2)
-        #out has shape experts x batchsize x outputDimension
+        #out has shape experts x batchsize *k x outputDimension
         
         out=out.permute([1,0,2])
         out=out.reshape(x.shape[0],self.k,self.nOfExperts,self.outputDimension)
@@ -311,9 +306,8 @@ class MoeExpertChoice(nn.Module):
 
         #recombine the outputs of the experts
         out=out.reshape(x.shape[0],-1,self.outputDimension)
-        outputs=torch.zeros(x.shape[0],x.shape[1],self.outputDimension)
-        outputs=outputs.to(device)
+        outputs=torch.zeros_like(x)
 
         #add the outputs of the experts to the token
-        outputs.scatter_add_(1,indexes,out)
+        outputs=torch.scatter_add(outputs, 1, indexes, out)
         return outputs
