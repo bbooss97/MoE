@@ -33,10 +33,8 @@ class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout = 0.,index=0,routing="muxAllTokens",nOfExperts=8,k=2,useSphere=False):
         super().__init__()
         self.routing=routing
-        if routing=="standard":
-            if k!=-1 or nOfExperts!=-1 or useSphere!=False:
-                raise Exception("A error occured!")
-            #default ff layer if i dont add the moe
+        self.alternatingEvery=2
+        if (index+1) % self.alternatingEvery == 0:
             self.net = nn.Sequential(
                 nn.Linear(dim, hidden_dim),
                 nn.GELU(),
@@ -44,22 +42,34 @@ class FeedForward(nn.Module):
                 nn.Linear(hidden_dim, dim),
                 nn.Dropout(dropout)
             )
-        elif routing=="tokenChoice":
-            if useSphere!=False or k!=-1 or nOfExperts==-1:
-                raise Exception("A error occured!")
-            self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
-        elif routing=="muxAllTokens":
-            if k!=-1 or nOfExperts==-1:
-                raise Exception("A error occured!")
-            self.net=MoeMuxExpertChoiceAllTokens(dim,hidden_dim,dim,nOfExperts,dropout,useSphere=useSphere)
-        elif routing=="muxKTokens":
-            if k==-1 or nOfExperts==-1:
-                raise Exception("A error occured!")
-            self.net=MoeMuxExpertChoiceKTokens(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
-        elif routing=="expertChoice":
-            if k==-1 or nOfExperts==-1:
-                raise Exception("A error occured!")
-            self.net=MoeExpertChoice(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
+        else:
+            if routing=="standard":
+                if k!=-1 or nOfExperts!=-1 or useSphere!=False:
+                    raise Exception("A error occured!")
+                #default ff layer if i dont add the moe
+                self.net = nn.Sequential(
+                    nn.Linear(dim, hidden_dim),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(hidden_dim, dim),
+                    nn.Dropout(dropout)
+                )
+            elif routing=="tokenChoice":
+                if useSphere!=False or k!=-1 or nOfExperts==-1:
+                    raise Exception("A error occured!")
+                self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
+            elif routing=="muxAllTokens":
+                if k!=-1 or nOfExperts==-1:
+                    raise Exception("A error occured!")
+                self.net=MoeMuxExpertChoiceAllTokens(dim,hidden_dim,dim,nOfExperts,dropout,useSphere=useSphere)
+            elif routing=="muxKTokens":
+                if k==-1 or nOfExperts==-1:
+                    raise Exception("A error occured!")
+                self.net=MoeMuxExpertChoiceKTokens(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
+            elif routing=="expertChoice":
+                if k==-1 or nOfExperts==-1:
+                    raise Exception("A error occured!")
+                self.net=MoeExpertChoice(dim,hidden_dim,dim,nOfExperts,k,dropout,useSphere=useSphere)
 
 
     def forward(self, x):
@@ -108,10 +118,10 @@ class Transformer(nn.Module):
         nOfExperts=int(wandb.config.nOfExperts)
         k=int(wandb.config.k)
         useSphere=bool(wandb.config.useSphere)
-        # routing="muxAllTokens"
+        # routing="muxKTokens"
         # nOfExperts=8
-        # k=1
-        # useSphere=False
+        # k=2
+        # useSphere=True
         self.layers = nn.ModuleList([])
         for i in range(depth):
             self.layers.append(nn.ModuleList([
