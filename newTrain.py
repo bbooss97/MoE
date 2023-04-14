@@ -49,7 +49,7 @@ def loadDatasetCifar100():
     train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
     test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
     
-    return train_dataloader, test_dataloader
+    return train_dataloader, test_dataloader , 100
 
 def loadDatasetCifar10():
     #define dataset
@@ -69,7 +69,7 @@ def loadDatasetCifar10():
     train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
     test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
 
-    return train_dataloader, test_dataloader
+    return train_dataloader, test_dataloader , 10
 
 #define the models and the optimizer
 def load(num_classes=10):
@@ -215,9 +215,12 @@ def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
 #main function
 def run():
     wandb.init(id=sweep_id,project=project_name,entity=entity_name)
+
+    #change the commented lines to change the dataset
     # train_dataloader,test_dataloader =loadDatasetCifar100()
-    train_dataloader,test_dataloader =loadDatasetCifar10()
-    v, distiller, loss, optimizer =load(10)
+    train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
+
+    v, distiller, loss, optimizer =load(num_classes)
 
     num_epochs=wandb.config.num_epochs
 
