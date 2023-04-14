@@ -26,8 +26,9 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
         if self.useSphere:
-            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
-            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=False)
+            self.gate=torch.nn.Parameter(torch.empty([self.nOfExperts,self.reducedDimension]))
+            torch.nn.init.kaiming_uniform_(self.gate, a=5**0.5)
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
@@ -45,9 +46,9 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
             reducedX=self.reduce(x)
             reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
             #normalize gate weights
-            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            self.normalizedGate=self.gate/torch.norm(self.gate,dim=-1,keepdim=True)
             #compute the logits
-            gateLogits=self.gate(reducedX)
+            gateLogits=torch.einsum("ab,cdb ->cda",self.normalizedGate,reducedX)
         else:
             gateLogits=self.gate(x)
         
@@ -130,8 +131,9 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
         if self.useSphere:
-            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
-            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=False)
+            self.gate=torch.nn.Parameter(torch.empty([self.nOfExperts,self.reducedDimension]))
+            torch.nn.init.kaiming_uniform_(self.gate, a=5**0.5)
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
@@ -149,9 +151,9 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
             reducedX=self.reduce(x)
             reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
             #normalize gate weights
-            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            self.normalizedGate=self.gate/torch.norm(self.gate,dim=-1,keepdim=True)
             #compute the logits
-            gateLogits=self.gate(reducedX)
+            gateLogits=torch.einsum("ab,cdb ->cda",self.normalizedGate,reducedX)
         else:
             gateLogits=self.gate(x)
         
@@ -239,8 +241,9 @@ class MoeExpertChoice(nn.Module):
         torch.nn.init.kaiming_uniform_(self.weight2, a=5**0.5)
         
         if self.useSphere:
-            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=True)
-            self.gate=nn.Linear(self.reducedDimension, self.nOfExperts,bias=False)
+            self.reduce=nn.Linear(self.inputDimension, self.reducedDimension,bias=False)
+            self.gate=torch.nn.Parameter(torch.empty([self.nOfExperts,self.reducedDimension]))
+            torch.nn.init.kaiming_uniform_(self.gate, a=5**0.5)
         else:
             self.gate=nn.Linear(self.inputDimension, self.nOfExperts)
 
@@ -258,9 +261,9 @@ class MoeExpertChoice(nn.Module):
             reducedX=self.reduce(x)
             reducedX=reducedX/torch.norm(reducedX,dim=-1,keepdim=True)
             #normalize gate weights
-            self.gate.weight.data=self.gate.weight.data/torch.norm(self.gate.weight,dim=-1,keepdim=True)
+            self.normalizedGate=self.gate/torch.norm(self.gate,dim=-1,keepdim=True)
             #compute the logits
-            gateLogits=self.gate(reducedX)
+            gateLogits=torch.einsum("ab,cdb ->cda",self.normalizedGate,reducedX)
         else:
             gateLogits=self.gate(x)
         
