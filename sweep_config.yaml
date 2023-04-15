@@ -38,6 +38,7 @@ parameters:
       - 16
       - 64
       - 128
+      - 256
   k:
     values:
       - -1
@@ -48,8 +49,3 @@ parameters:
     values:
       - False
       - True
-early_terminate:
-  type: hyperband
-  s: 2
-  eta: 3
-  max_iter: 27
