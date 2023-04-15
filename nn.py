@@ -163,7 +163,7 @@ class MoeMuxExpertChoiceKTokens(nn.Module):
         topKvalues,topKindices=torch.topk(gateProbabilitiesTokens,self.k,dim=-2)
 
         #take as inputs for the experts the weighted sum of the top k tokens
-        indexes=topKindices.reshape(x.shape[0],-1).unsqueeze(2).repeat(1,1,self.inputDimension)
+        indexes=topKindices.reshape(x.shape[0],-1).unsqueeze(2).expand(-1,-1,self.inputDimension)
         inp=torch.gather(x,1,indexes)
         inp=inp.reshape(x.shape[0],self.k,self.nOfExperts,x.shape[-1])
         #inp has shape batchsize x k x experts x inputDimension
@@ -272,7 +272,7 @@ class MoeExpertChoice(nn.Module):
         topKvalues,topKindices=torch.topk(gateProbabilitiesTokens,self.k,dim=-2)
 
         #take as inputs for the experts the weighted sum of the top k tokens
-        indexes=topKindices.reshape(x.shape[0],-1).unsqueeze(2).repeat(1,1,self.inputDimension)
+        indexes=topKindices.reshape(x.shape[0],-1).unsqueeze(2).expand(-1,-1,self.inputDimension)
         inp=torch.gather(x,1,indexes)
         inp=inp.reshape(x.shape[0],self.k,self.nOfExperts,x.shape[-1])
         #inp has shape batchsize x k x experts x inputDimension
