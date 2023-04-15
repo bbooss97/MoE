@@ -93,8 +93,8 @@ def load(num_classes=10):
         depth = depth,
         heads = heads,
         mlp_dim = mlp_dim,
-        dropout = 0.1,
-        emb_dropout = 0.1
+        dropout = 0.0,
+        emb_dropout = 0.0
     )
 
     distiller = DistillWrapper(
