@@ -18,7 +18,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 sweep_id=""
-project_name="moeSweepsCifar10"
+project_name="moeCifar100"
 entity_name="bbooss97"
 
 # Load the YAML file as a dictionary
