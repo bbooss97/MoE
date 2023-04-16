@@ -219,8 +219,8 @@ def run():
     wandb.init(id=sweep_id,project=project_name,entity=entity_name)
 
     #change the commented lines to change the dataset
-    # train_dataloader,test_dataloader =loadDatasetCifar100()
-    train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
+    train_dataloader,test_dataloader,num_classes =loadDatasetCifar100()
+    # train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
 
     v, distiller, loss, optimizer =load(num_classes)
 
@@ -229,7 +229,7 @@ def run():
     #simple early stopping
     topAccuracy=0
     epochsWithoutImprovements=0
-    stopIfNoImprovementFor=5
+    stopIfNoImprovementFor=7
 
     for epoch in range(num_epochs):
         trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer)
