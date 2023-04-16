@@ -212,6 +212,8 @@ def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
     #save the model with the id from wandb
     torch.save(v,"./"+ "vit" +".pt")
 
+    return accuracy
+
 #main function
 def run():
     wandb.init(id=sweep_id,project=project_name,entity=entity_name)
@@ -223,10 +225,24 @@ def run():
     v, distiller, loss, optimizer =load(num_classes)
 
     num_epochs=wandb.config.num_epochs
+    
+    #simple early stopping
+    topAccuracy=0
+    epochsWithoutImprovements=0
+    stopIfNoImprovementFor=5
 
     for epoch in range(num_epochs):
         trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer)
-        testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
+        accuracy=testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
+        
+        #if there are no improvements stop the training
+        if accuracy>topAccuracy:
+            topAccuracy=accuracy
+            epochsWithoutImprovements=0
+        else:
+            epochsWithoutImprovements+=1
+        if epochsWithoutImprovements>=stopIfNoImprovementFor:
+            return
 
 
 # Start sweep jobs
