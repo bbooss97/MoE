@@ -2,5 +2,5 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip install wandb
 pip install scikit-learn
 pip install pyyaml
-pip install mixture-of-experts
+pip install mixture_of_experts
 pip install einops
