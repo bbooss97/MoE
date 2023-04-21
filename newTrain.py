@@ -17,6 +17,7 @@ import yaml
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
+
 sweep_id=""
 project_name="moeCifar100"
 entity_name="bbooss97"
@@ -229,20 +230,22 @@ def run():
     #simple early stopping
     topAccuracy=0
     epochsWithoutImprovements=0
-    stopIfNoImprovementFor=7
+    stopIfNoImprovementFor=3
 
     for epoch in range(num_epochs):
         trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer)
-        accuracy=testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
-        
-        #if there are no improvements stop the training
-        if accuracy>topAccuracy:
-            topAccuracy=accuracy
-            epochsWithoutImprovements=0
-        else:
-            epochsWithoutImprovements+=1
-        if epochsWithoutImprovements>=stopIfNoImprovementFor:
-            return
+
+        if epoch%3==0:
+            accuracy=testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
+            
+            #if there are no improvements stop the training
+            if accuracy>topAccuracy:
+                topAccuracy=accuracy
+                epochsWithoutImprovements=0
+            else:
+                epochsWithoutImprovements+=1
+            if epochsWithoutImprovements>=stopIfNoImprovementFor:
+                return
 
 
 # Start sweep jobs
