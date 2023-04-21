@@ -14,13 +14,13 @@ import torchvision.transforms as transforms
 import yaml
 
 #device
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 print(device)
 
 
 sweep_id=""
 project_name="moeCifar100"
-entity_name="bbooss97"
+entity_name="aledevo"
 
 # Load the YAML file as a dictionary
 with open("sweep_config.yaml") as f:
@@ -37,11 +37,11 @@ def loadDatasetCifar100():
     datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
         transforms.RandAugment(num_ops=3, magnitude=5),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ]))
     datasetTest=torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ]))
 
     batch_size=wandb.config.batch_size
@@ -211,7 +211,7 @@ def testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer):
     wandb.log({"avg_loss_test":avg_loss,"accuracy_test":accuracy,"f1_test":f1,"precision_test":precision,"recall_test":recall})
 
     #save the model with the id from wandb
-    torch.save(v,"./"+ "vit" +".pt")
+    # torch.save(v,"./"+ "vit" +".pt")
 
     return accuracy
 
