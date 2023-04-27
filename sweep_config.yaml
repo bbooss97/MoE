@@ -15,7 +15,7 @@ parameters:
       - 0.001
   dim:
     values:
-      - 512
+      - 256
   depth:
     values:
       - 12
@@ -24,7 +24,7 @@ parameters:
       - 12
   mlp_dim:
     values:
-      - 256
+      - 512
   routing:
     values:
       - standard
