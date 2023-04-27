@@ -94,8 +94,8 @@ def load(num_classes=10):
         depth = depth,
         heads = heads,
         mlp_dim = mlp_dim,
-        dropout = 0.0,
-        emb_dropout = 0.0
+        dropout = 0.1,
+        emb_dropout = 0.1
     )
 
     distiller = DistillWrapper(
@@ -113,11 +113,12 @@ def load(num_classes=10):
     
     #define loss and the optimizer
     loss=nn.CrossEntropyLoss()
-    optimizer=torch.optim.Adam(v.parameters(),lr=lr)
+    optimizer=torch.optim.Adam(v.parameters(),lr=lr,weight_decay=1e-3)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 10)
 
-    return v, distiller, loss, optimizer
+    return v, distiller, loss, optimizer , scheduler
 
-def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer):
+def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer, scheduler):
     #train
     v.train()
     wandb.log({"epoch":epoch})
@@ -137,6 +138,7 @@ def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer):
         optimizer.zero_grad()
         l.backward()
         optimizer.step()
+        scheduler.step()
 
         #log
         if i%20==0:
@@ -223,7 +225,7 @@ def run():
     train_dataloader,test_dataloader,num_classes =loadDatasetCifar100()
     # train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
 
-    v, distiller, loss, optimizer =load(num_classes)
+    v, distiller, loss, optimizer , scheduler =load(num_classes)
 
     num_epochs=wandb.config.num_epochs
     
@@ -233,7 +235,7 @@ def run():
     stopIfNoImprovementFor=3
 
     for epoch in range(num_epochs):
-        trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer)
+        trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer , scheduler)
 
         if epoch%3==0:
             accuracy=testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
