@@ -12,7 +12,7 @@ parameters:
       - 180
   lr:
     values:
-      - 0.01
+      - 0.0001
   dim:
     values:
       - 128
