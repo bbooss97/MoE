@@ -15,16 +15,16 @@ parameters:
       - 0.001
   dim:
     values:
-      - 256
+      - 128
   depth:
     values:
-      - 4
+      - 8
   heads:
     values:
       - 12
   mlp_dim:
     values:
-      - 512
+      - 256
   routing:
     values:
       - standard

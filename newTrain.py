@@ -35,7 +35,7 @@ if sweep_id=="":
 def loadDatasetCifar100():
     #define dataset
     datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
-        transforms.RandAugment(num_ops=3, magnitude=12),
+        transforms.RandAugment(num_ops=2, magnitude=14),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ]))
