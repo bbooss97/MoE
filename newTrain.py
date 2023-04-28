@@ -35,7 +35,7 @@ if sweep_id=="":
 def loadDatasetCifar100():
     #define dataset
     datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
-        transforms.RandAugment(num_ops=4, magnitude=12),
+        transforms.RandAugment(num_ops=3, magnitude=12),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ]))
@@ -94,8 +94,8 @@ def load(num_classes=10):
         depth = depth,
         heads = heads,
         mlp_dim = mlp_dim,
-        dropout = 0.1,
-        emb_dropout = 0.1
+        dropout = 0.0,
+        emb_dropout = 0.0
     )
 
     distiller = DistillWrapper(
@@ -113,7 +113,7 @@ def load(num_classes=10):
     
     #define loss and the optimizer
     loss=nn.CrossEntropyLoss()
-    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=1e-4)
+    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 10)
 
     return v, distiller, loss, optimizer , scheduler

@@ -12,19 +12,19 @@ parameters:
       - 180
   lr:
     values:
-      - 0.0001
+      - 0.01
   dim:
     values:
-      - 256
+      - 128
   depth:
     values:
-      - 12
+      - 8
   heads:
     values:
-      - 12
+      - 4
   mlp_dim:
     values:
-      - 512
+      - 256
   routing:
     values:
       - standard
