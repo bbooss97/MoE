@@ -113,7 +113,7 @@ def load(num_classes=10):
     
     #define loss and the optimizer
     loss=nn.CrossEntropyLoss()
-    optimizer=torch.optim.Adam(v.parameters(),lr=lr)
+    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 10)
 
     return v, distiller, loss, optimizer , scheduler
