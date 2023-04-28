@@ -232,7 +232,7 @@ def run():
     #simple early stopping
     topAccuracy=0
     epochsWithoutImprovements=0
-    stopIfNoImprovementFor=3
+    stopIfNoImprovementFor=5
 
     for epoch in range(num_epochs):
         trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer , scheduler)
