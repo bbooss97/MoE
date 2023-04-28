@@ -6,19 +6,19 @@ metric:
 parameters:
   batch_size:
     values:
-      - 128
+      - 512
   num_epochs:
     values:
       - 180
   lr:
     values:
-      - 0.0001
+      - 0.001
   dim:
     values:
       - 256
   depth:
     values:
-      - 12
+      - 4
   heads:
     values:
       - 12
