@@ -33,9 +33,11 @@ if sweep_id=="":
 
 #load the cifar100 dataset with 3 randaug
 def loadDatasetCifar100():
+    num_ops=wandb.config.num_ops
+    magnitude=wandb.config.magnitude
     #define dataset
     datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
-        transforms.RandAugment(num_ops=3, magnitude=12),
+        transforms.RandAugment(num_ops=num_ops, magnitude=magnitude),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ]))
@@ -53,9 +55,11 @@ def loadDatasetCifar100():
     return train_dataloader, test_dataloader , 100
 
 def loadDatasetCifar10():
+    num_ops=wandb.config.num_ops
+    magnitude=wandb.config.magnitude
     #define dataset
     datasetTraining=torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.Compose([
-        transforms.RandAugment(num_ops=3, magnitude=6),
+        transforms.RandAugment(num_ops=num_ops, magnitude=magnitude),
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ]))
@@ -79,6 +83,8 @@ def load(num_classes=10):
     heads=wandb.config.heads
     mlp_dim=wandb.config.mlp_dim
     lr=wandb.config.lr
+    dropout=wandb.config.dropout
+    weight_decay=wandb.config.weight_decay
 
     #load the teacher model
     teacher = resnet50(pretrained = True )
@@ -94,8 +100,8 @@ def load(num_classes=10):
         depth = depth,
         heads = heads,
         mlp_dim = mlp_dim,
-        dropout = 0.0,
-        emb_dropout = 0.0
+        dropout = dropout,
+        emb_dropout = dropout
     )
 
     distiller = DistillWrapper(
@@ -113,7 +119,8 @@ def load(num_classes=10):
     
     #define loss and the optimizer
     loss=nn.CrossEntropyLoss()
-    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=1e-4)
+
+    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 10)
 
     return v, distiller, loss, optimizer , scheduler

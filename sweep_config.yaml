@@ -7,12 +7,24 @@ parameters:
   batch_size:
     values:
       - 512
+  weight_decay:
+    values:
+      - 0.0001
+  num_ops:
+    values:
+      - 4
+  magnitude:
+    values:
+      - 6   
   num_epochs:
     values:
       - 180
   lr:
     values:
       - 0.0001
+  dropout:
+    values:
+      - 0.1
   dim:
     values:
       - 128
