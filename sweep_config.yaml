@@ -6,7 +6,7 @@ metric:
 parameters:
   batch_size:
     values:
-      - 512
+      - 64
   weight_decay:
     values:
       - 0.01
