@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from torch import nn
+import numpy as np
 import torchvision
 from torchvision.models import resnet50
 import wandb
@@ -121,12 +122,15 @@ def load(num_classes=10):
     #define loss and the optimizer
     loss=nn.CrossEntropyLoss()
 
-    optimizer=torch.optim.Adam(v.parameters(),lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 10)
+    optimizer=torch.optim.AdamW(v.parameters(),lr=lr, weight_decay=weight_decay)
+    scheduler = lambda t: np.interp([t], [0, num_epochs*2//5, num_epochs*4//5, num_epochs], 
+                                  [0, lr, lr/20.0, 0])[0]
 
-    return v, distiller, loss, optimizer , scheduler
+    scaler=torch.cuda.amp.GradScaler()
 
-def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer, scheduler):
+    return v, distiller, loss, optimizer , scheduler, scaler
+
+def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer, scheduler,scaler):
     #train
     v.train()
     wandb.log({"epoch":epoch})
@@ -143,10 +147,12 @@ def trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer, sche
             
         #backpropagation
         torch.cuda.empty_cache()
+        lr=scheduler(num_epochs+(i + 1)/len(train_dataloader))
+        optimizer.param_groups[0].update(lr=lr)
         optimizer.zero_grad()
-        l.backward()
-        optimizer.step()
-        scheduler.step()
+        scaler.scale(l).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         #log
         if i%20==0:
@@ -233,7 +239,7 @@ def run():
     train_dataloader,test_dataloader,num_classes =loadDatasetCifar100()
     # train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
 
-    v, distiller, loss, optimizer , scheduler =load(num_classes)
+    v, distiller, loss, optimizer , scheduler ,scaler =load(num_classes)
 
     num_epochs=wandb.config.num_epochs
     
@@ -243,7 +249,7 @@ def run():
     stopIfNoImprovementFor=5
 
     for epoch in range(num_epochs):
-        trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer , scheduler)
+        trainLoop(epoch, num_epochs, train_dataloader, v, distiller, optimizer , scheduler , scaler)
 
         if epoch%3==0:
             accuracy=testLoop(epoch, num_epochs, test_dataloader, v, loss, optimizer)
