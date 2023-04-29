@@ -9,22 +9,22 @@ parameters:
       - 512
   weight_decay:
     values:
-      - 0.0001
+      - 0.01
   num_ops:
     values:
-      - 4
+      - 3
   magnitude:
     values:
-      - 6   
+      - 12   
   num_epochs:
     values:
       - 180
   lr:
     values:
-      - 0.0001
+      - 0.01
   dropout:
     values:
-      - 0.1
+      - 0.0
   dim:
     values:
       - 128

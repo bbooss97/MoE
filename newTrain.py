@@ -85,6 +85,7 @@ def load(num_classes=10):
     lr=wandb.config.lr
     dropout=wandb.config.dropout
     weight_decay=wandb.config.weight_decay
+    num_epochs=wandb.config.num_epochs
 
     #load the teacher model
     teacher = resnet50(pretrained = True )
