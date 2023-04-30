@@ -38,9 +38,14 @@ def loadDatasetCifar100():
     magnitude=wandb.config.magnitude
     #define dataset
     datasetTraining=torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transforms.Compose([
+        # transforms.RandomResizedCrop(32, scale=(0.75, 1.0), ratio=(1.0, 1.0)),
+        # transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandAugment(num_ops=num_ops, magnitude=magnitude),
+        # transforms.ColorJitter(0.1,0.1,0.1),
         transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+        # transforms.RandomErasing(p=0.25)
+
     ]))
     datasetTest=torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transforms.Compose([
         transforms.ToTensor(),

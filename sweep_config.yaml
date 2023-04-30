@@ -6,16 +6,16 @@ metric:
 parameters:
   batch_size:
     values:
-      - 512
+      - 256
   weight_decay:
     values:
       - 0.0001
   num_ops:
     values:
-      - 4
+      - 3
   magnitude:
     values:
-      - 8  
+      - 12  
   num_epochs:
     values:
       - 180
@@ -24,13 +24,13 @@ parameters:
       - 0.001
   dropout:
     values:
-      - 0.0
+      - 0.1
   dim:
     values:
       - 128
   depth:
     values:
-      - 8
+      - 12
   heads:
     values:
       - 4
