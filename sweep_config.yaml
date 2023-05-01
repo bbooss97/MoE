@@ -6,7 +6,7 @@ metric:
 parameters:
   batch_size:
     values:
-      - 256
+      - 128
   weight_decay:
     values:
       - 0.0001
@@ -21,10 +21,10 @@ parameters:
       - 180
   lr:
     values:
-      - 0.001
+      - 0.0001
   dropout:
     values:
-      - 0.1
+      - 0.05
   dim:
     values:
       - 128
