@@ -21,10 +21,10 @@ parameters:
       - 200
   lr:
     values:
-      - 0.00025
+      - 0.0001
   dropout:
     values:
-      - 0.1
+      - 0.05
   dim:
     values:
       - 128
@@ -33,7 +33,7 @@ parameters:
       - 12
   heads:
     values:
-      - 6
+      - 4
   mlp_dim:
     values:
       - 256
@@ -46,9 +46,7 @@ parameters:
       - muxKTokens
   nOfExperts:
     values:
-      - -1
-      - 16
-      - 64
+      - 128
   k:
     values:
       - -1
