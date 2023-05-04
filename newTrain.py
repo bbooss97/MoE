@@ -55,8 +55,8 @@ def loadDatasetCifar100():
     batch_size=wandb.config.batch_size
 
     #define dataloader
-    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
-    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
+    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True ,pin_memory=True)
+    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True ,pin_memory=True)
     
     return train_dataloader, test_dataloader , 100
 
@@ -77,8 +77,8 @@ def loadDatasetCifar10():
     batch_size=wandb.config.batch_size
 
     #define dataloader
-    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True )
-    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True )
+    train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True ,pin_memory=True)
+    test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True ,pin_memory=True)
 
     return train_dataloader, test_dataloader , 10
 
