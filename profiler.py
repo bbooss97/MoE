@@ -62,7 +62,7 @@ def load(num_classes=10):
     #put models on the device
     v=v.to(device)
 
-    input=torch.randn(1,3,32,32).to(device)
+    input=torch.randn(128,3,32,32).to(device)
 
     return v,input
 

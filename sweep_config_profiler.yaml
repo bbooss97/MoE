@@ -31,7 +31,7 @@ parameters:
       - 128
   depth:
     values:
-      - 2
+      - 12
   heads:
     values:
       - 4
