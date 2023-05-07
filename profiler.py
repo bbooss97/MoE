@@ -14,6 +14,7 @@ from vit_pytorch.distill import DistillableViT,DistillWrapper
 import torchvision.transforms as transforms
 import yaml
 from vit_pytorch.vit import ViT
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 #device
@@ -23,7 +24,7 @@ print(device)
 
 sweep_id=""
 project_name="moeProfiler"
-entity_name="aledevo"
+entity_name="bbooss97"
 
 # Load the YAML file as a dictionary
 with open("sweep_config.yaml") as f:
@@ -58,10 +59,17 @@ def load(num_classes=10):
     #put models on the device
     v=v.to(device)
 
-    return v
+    input=torch.randn(1,3,32,32).to(device)
+
+    return v,input
+
 #function to profile the model
-def profile(model):
-    pass
+def profile(model,input):
+    with profile(activities=[ProfilerActivity.CPU,ProfilerActivity.CUDA], record_shapes=True) as prof:
+        with record_function("model_inference"):
+            model(input)
+    
+    print(prof.key_averages().table(sort_by="cpu_time_total", ))
 
 #main function
 def run():
@@ -69,7 +77,7 @@ def run():
 
     v=load(100)
 
-    profile(v)
+    profile(v,input)
 
 
 # Start sweep jobs
