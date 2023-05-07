@@ -103,47 +103,7 @@ def loadFood101():
 
     return train_dataloader, test_dataloader , 101
     
-    # url="http://data.vision.ee.ethz.ch/cvl/food-101.tar.gz"
-    # target_dir='./data'
-
-    # # Check if the dataset file exists in the target directory
-    # if not os.path.exists(os.path.join(target_dir, 'food-101')):
-    #     # Download the dataset
-    #     if not os.path.exists(os.path.join(target_dir, 'food-101.tar.gz')):
-    #         print('Downloading dataset...') 
-    #         wget.download(url, target_dir)
-    #     print('Dataset downloaded successfully.')
-        
-    #     # Unzip the downloaded file that is a tar
-    #     with tarfile.open(target_dir+"/food-101.tar.gz", "r:gz") as tar:
-    #         tar.extractall(target_dir)
-    #     print('Dataset unzipped successfully.')
-        
-    # else:
-    #     print('Dataset file already exists in target directory.')
-
-    # #define dataset
-    # datasetTraining=torchvision.datasets.ImageFolder(root='./data/food-101/images', transform=transforms.Compose([
-    #         transforms.RandomResizedCrop(224),
-    #         transforms.RandomHorizontalFlip(), 
-    #         transforms.ToTensor(),
-    #         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-    # ]))
     
-    # datasetTest=torchvision.datasets.ImageFolder(root='./data/food-101/images', transform=transforms.Compose([
-    #         transforms.CenterCrop(224),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))      
-    # ]))
-
-    # #define dataloader
-    # train_dataloader = DataLoader(datasetTraining, batch_size=batch_size, shuffle=True , drop_last=True ,pin_memory=True)
-    # test_dataloader = DataLoader(datasetTest, batch_size=batch_size, shuffle=False , drop_last=True ,pin_memory=True)
-
-    # return train_dataloader, test_dataloader , 101
-
-
-
 #define the models and the optimizer
 def load(num_classes=10):
     dim=wandb.config.dim
