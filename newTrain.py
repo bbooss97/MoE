@@ -162,8 +162,8 @@ def load(num_classes=10):
 
     #load the student model
     v = DistillableViT(
-        image_size = 224,
-        patch_size = 16,
+        image_size = 32,
+        patch_size = 4,
         num_classes = num_classes,
         dim = dim,
         depth = depth,
@@ -297,9 +297,9 @@ def run():
     wandb.init(id=sweep_id,project=project_name,entity=entity_name)
 
     #change the commented lines to change the dataset
-    # train_dataloader,test_dataloader,num_classes =loadDatasetCifar100()
+    train_dataloader,test_dataloader,num_classes =loadDatasetCifar100()
     # train_dataloader,test_dataloader,num_classes =loadDatasetCifar10()
-    train_dataloader,test_dataloader,num_classes =loadFood101()
+    # train_dataloader,test_dataloader,num_classes =loadFood101()
 
     v, distiller, loss, optimizer  =load(num_classes)
 
