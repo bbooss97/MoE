@@ -27,10 +27,10 @@ first=True
 
 sweep_id=""
 project_name="moeProfiler"
-entity_name="bbooss97"
+entity_name="aledevo"
 
 # Load the YAML file as a dictionary
-with open("sweep_config.yaml") as f:
+with open("sweep_config_profiler.yaml") as f:
   sweep_configuration = yaml.safe_load(f)
 
 if sweep_id=="":
