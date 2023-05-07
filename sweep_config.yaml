@@ -3,6 +3,7 @@ name: sweep
 metric:
   goal: minimize
   name: avg_loss_test
+early_terminate: None
 parameters:
   batch_size:
     values:
@@ -30,7 +31,7 @@ parameters:
       - 128
   depth:
     values:
-      - 12
+      - 2
   heads:
     values:
       - 4
@@ -46,6 +47,9 @@ parameters:
       - muxKTokens
   nOfExperts:
     values:
+      - -1
+      - 16
+      - 64
       - 128
   k:
     values:
@@ -56,4 +60,4 @@ parameters:
   useSphere:
     values:
       - False
-      - True
+     

@@ -15,11 +15,14 @@ import torchvision.transforms as transforms
 import yaml
 from vit_pytorch.vit import ViT
 from torch.profiler import profile, record_function, ProfilerActivity
+import time
 
 
 #device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
+
+first=True
 
 
 sweep_id=""
@@ -64,21 +67,35 @@ def load(num_classes=10):
     return v,input
 
 #function to profile the model
-def profile(model,input):
+def profileModel(model,input):
     with profile(activities=[ProfilerActivity.CPU,ProfilerActivity.CUDA], record_shapes=True) as prof:
         with record_function("model_inference"):
             model(input)
-    
-    print(prof.key_averages().table(sort_by="cpu_time_total", ))
+    res=prof.key_averages().table(sort_by="cuda_time_total")
+    cpuTimeStr=res.split("\n")[-3][21:]
+    cudaTimeStr=res.split("\n")[-2][22:]
+
+    wandb.log({"profiler":res,"cpuTimeTotal":cpuTimeStr,"cudaTimeTotal":cudaTimeStr})
+
+    print(res)
+    print("cpu time: "+cpuTimeStr)
+    print("cuda time: "+cudaTimeStr)
+    return
 
 #main function
 def run():
     wandb.init(id=sweep_id,project=project_name,entity=entity_name)
+    global first
 
-    v=load(100)
+    v,input=load(100)
 
-    profile(v,input)
+    profileModel(v,input)
 
+    #if firt run standard
+    if first:
+        print("its the first run wait 60 sec")
+        time.sleep(60)
+        first=False
 
 # Start sweep jobs
 wandb.agent(sweep_id, function=run,entity=entity_name,project=project_name)
