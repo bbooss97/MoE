@@ -11,7 +11,7 @@ from nn import MoeExpertChoice
 import wandb
 
 #use the sparsely gated mixture of experts
-from mixture_of_experts import MoE
+from sparseMoe import MoE
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -57,7 +57,7 @@ class FeedForward(nn.Module):
             elif routing=="tokenChoice":
                 if useSphere!=False or k!=-1 or nOfExperts==-1:
                     raise Exception("A error occured!")
-                self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU)
+                self.net=MoE(dim,nOfExperts,hidden_dim,activation=nn.GELU,dropout=dropout)
             elif routing=="muxAllTokens":
                 if k!=-1 or nOfExperts==-1:
                     raise Exception("A error occured!")
