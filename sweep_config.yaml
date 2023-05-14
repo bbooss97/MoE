@@ -40,20 +40,15 @@ parameters:
       - 256
   routing:
     values:
-      - standard
-      - muxAllTokens
-      - expertChoice
+      - tokenChoice
   nOfExperts:
     values:
-      - -1
       - 16
       - 64
       - 128
   k:
     values:
       - -1
-      - 1
-      - 4
   useSphere:
     values:
       - False
