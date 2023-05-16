@@ -22,7 +22,7 @@ print(device)
 
 sweep_id=""
 project_name="moeCifar100"
-entity_name="aledevo"
+entity_name="bbooss97"
 
 # Load the YAML file as a dictionary
 with open("sweep_config.yaml") as f:
