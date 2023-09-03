@@ -34,11 +34,6 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
 
     def forward(self, x):
         self.counter+=1
-        #if its the first time i enter the forward i initialize the ones tensor
-        if self.first:
-            self.first=False
-            #this tensor is later added in the inputs to include the bias in the multiplication with the experts
-            self.ones=torch.ones([self.nOfExperts,x.shape[0],1]).to(device)
 
         #compute the logits of the gate
         if self.useSphere:
@@ -63,7 +58,7 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         
         #take the weighted sum of the inputs for each expert
         #it multiplies the x by the probability of the expert to choose the token and i sum over the tokens dimension to take the weighted sum
-        inp=torch.einsum('btk,bta->bak',x,gateProbabilitiesTokens)
+        inp=torch.einsum('...tk,...ta->...ak',x,gateProbabilitiesTokens)
         #inp has shape batchsize x experts x inputDimension
 
         # #average of the cos sim of each input with all the others this is a loss to distantiate the expert's inputs 
@@ -77,7 +72,13 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         # self.rlLoss=(self.rlLoss.sum()-self.rlLoss.diag().sum())/(self.rlLoss.shape[0]**2-self.rlLoss.shape[0])
 
 
-        inp=inp.permute([1,0,2])
+        #do it with einsum
+        inp=torch.einsum("...ac-> a...c",inp)
+        #if its the first time i enter the forward i initialize the ones tensor
+        if self.first:
+            self.first=False
+            #this tensor is later added in the inputs to include the bias in the multiplication with the experts
+            self.ones=torch.ones([i for i in inp.shape[:-1]]+[1]).to(device)
         #inp has shape experts x batchsize x inputDimension
         
         #pass them to the experts
@@ -92,12 +93,12 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         out = torch.bmm(out,self.weight2)
         #out has shape experts x batchsize x outputDimension
         
-        out=out.permute([1,0,2])
+        out=torch.einsum("a...c->...ac",out)
         #out has shape batchsize x experts x outputDimension
 
         #multiply by the probabilities and reorganize the outputs
         #it multiplies the output of the experts by the probability of the expert to choose the token and i sum over the experts dimension to take the weighted sum of the outputs
-        out=torch.einsum('btk,bat->bak',out,gateProbabilitiesExperts)
+        out=torch.einsum('...tk,...at->...ak',out,gateProbabilitiesExperts)
 
         #out has shape batchsize x tokens x outputDimension
         return out
