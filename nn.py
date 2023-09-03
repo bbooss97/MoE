@@ -86,11 +86,11 @@ class MoeMuxExpertChoiceAllTokens(nn.Module):
         #i use the batched matrix multiplication to parallelize the computation
         #this is the same block of the default vit with 2 layers dropout and gelu
         inp=torch.cat((inp,self.ones),dim=-1)
-        out = torch.bmm(inp,self.weight1)
+        out=torch.einsum("...ab,tbd->...ad",inp,self.weight1)
         out=nn.GELU()(out)
         out=nn.Dropout(self.dropout)(out)
         out=torch.cat((out,self.ones),dim=-1)
-        out = torch.bmm(out,self.weight2)
+        out=torch.einsum("...ab,...tbd->...ad",out,self.weight2)
         #out has shape experts x batchsize x outputDimension
         
         out=torch.einsum("a...c->...ac",out)
